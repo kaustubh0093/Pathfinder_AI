@@ -1,0 +1,237 @@
+@import "tailwindcss";
+
+/* ===== Design System Theme ===== */
+@theme {
+  /* --- Colors --- */
+  --color-surface: #121416;
+  --color-surface-dim: #121416;
+  --color-surface-bright: #37393b;
+  --color-surface-container-lowest: #0c0e10;
+  --color-surface-container-low: #1a1c1e;
+  --color-surface-container: #1e2022;
+  --color-surface-container-high: #282a2c;
+  --color-surface-container-highest: #333537;
+  --color-surface-variant: #333537;
+  --color-surface-tint: #5cd7e5;
+  --color-background: #121416;
+
+  --color-on-surface: #e2e2e5;
+  --color-on-surface-variant: #c1c6d7;
+  --color-on-background: #e2e2e5;
+
+  --color-primary: #5cd7e5;
+  --color-primary-container: #00a0ad;
+  --color-primary-fixed: #88f3ff;
+  --color-primary-fixed-dim: #5cd7e5;
+  --color-on-primary: #00363b;
+  --color-on-primary-container: #002f33;
+  --color-on-primary-fixed: #001f23;
+  --color-on-primary-fixed-variant: #004f56;
+  --color-inverse-primary: #006971;
+
+  --color-secondary: #acc9ed;
+  --color-secondary-container: #2b4967;
+  --color-secondary-fixed: #d0e4ff;
+  --color-secondary-fixed-dim: #acc9ed;
+  --color-on-secondary: #12324f;
+  --color-on-secondary-container: #9ab8db;
+  --color-on-secondary-fixed: #001d35;
+  --color-on-secondary-fixed-variant: #2b4967;
+
+  --color-tertiary: #00dfc1;
+  --color-tertiary-container: #00a38d;
+  --color-tertiary-fixed: #26fedc;
+  --color-tertiary-fixed-dim: #00dfc1;
+  --color-on-tertiary: #00382f;
+  --color-on-tertiary-container: #003028;
+  --color-on-tertiary-fixed: #00201a;
+  --color-on-tertiary-fixed-variant: #005144;
+
+  --color-error: #ffb4ab;
+  --color-error-container: #93000a;
+  --color-on-error: #690005;
+  --color-on-error-container: #ffdad6;
+
+  --color-outline: #8b90a0;
+  --color-outline-variant: #414754;
+  --color-inverse-surface: #e2e2e5;
+  --color-inverse-on-surface: #2f3133;
+
+  /* --- Fonts --- */
+  --font-headline: "Manrope", sans-serif;
+  --font-body: "Inter", sans-serif;
+  --font-label: "Inter", sans-serif;
+}
+
+/* ===== Global Utility Classes ===== */
+
+/* Material Symbols */
+.material-symbols-outlined {
+  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+}
+
+/* Mesh background gradient */
+.bg-mesh {
+  background-image: radial-gradient(
+      at 0% 0%,
+      rgba(92, 215, 229, 0.05) 0px,
+      transparent 50%
+    ),
+    radial-gradient(
+      at 100% 100%,
+      rgba(0, 223, 193, 0.05) 0px,
+      transparent 50%
+    );
+}
+
+/* Glassmorphism panel */
+.glass-panel {
+  background: rgba(18, 20, 22, 0.6);
+  backdrop-filter: blur(20px);
+}
+
+/* Text gradient */
+.text-gradient {
+  background: linear-gradient(135deg, #5cd7e5 0%, #00a0ad 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Primary button gradient */
+.bg-gradient-primary {
+  background: linear-gradient(135deg, #5cd7e5 0%, #00a0ad 100%);
+}
+
+/* AI Pulse glow */
+.ai-pulse {
+  box-shadow: 0 0 12px #26fedc;
+}
+
+/* Custom scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #414754;
+  border-radius: 10px;
+}
+
+/* Selection colours */
+::selection {
+  background-color: rgba(0, 160, 173, 0.3);
+}
+
+/* ===== Markdown Prose — Pathfinder AI Design System ===== */
+.prose-pathfinder {
+  color: var(--color-on-surface);
+  line-height: 1.7;
+}
+.prose-pathfinder h1,
+.prose-pathfinder h2,
+.prose-pathfinder h3,
+.prose-pathfinder h4 {
+  font-family: var(--font-headline);
+  font-weight: 700;
+  color: var(--color-on-background);
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+}
+.prose-pathfinder h1 { font-size: 1.6rem; }
+.prose-pathfinder h2 { font-size: 1.25rem; color: var(--color-primary); }
+.prose-pathfinder h3 { font-size: 1.05rem; color: var(--color-tertiary); }
+.prose-pathfinder p {
+  color: var(--color-on-surface-variant);
+  margin-bottom: 0.85em;
+  font-size: 0.9rem;
+}
+.prose-pathfinder strong {
+  color: var(--color-on-surface);
+  font-weight: 700;
+}
+.prose-pathfinder em {
+  color: var(--color-primary);
+  font-style: italic;
+}
+.prose-pathfinder ul,
+.prose-pathfinder ol {
+  padding-left: 1.5rem;
+  margin-bottom: 1em;
+  color: var(--color-on-surface-variant);
+  font-size: 0.9rem;
+}
+.prose-pathfinder li {
+  margin-bottom: 0.35em;
+}
+.prose-pathfinder li::marker {
+  color: var(--color-primary);
+}
+.prose-pathfinder a {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.prose-pathfinder a:hover {
+  color: var(--color-tertiary);
+}
+.prose-pathfinder code {
+  background: var(--color-surface-container-highest);
+  color: var(--color-tertiary);
+  border-radius: 0.25rem;
+  padding: 0.1em 0.4em;
+  font-size: 0.85em;
+  font-family: monospace;
+}
+.prose-pathfinder pre {
+  background: var(--color-surface-container-lowest);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  overflow-x: auto;
+  margin-bottom: 1em;
+}
+.prose-pathfinder pre code {
+  background: transparent;
+  padding: 0;
+  color: var(--color-on-surface);
+}
+.prose-pathfinder table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1.25em;
+  font-size: 0.875rem;
+  overflow-x: auto;
+  display: block;
+}
+.prose-pathfinder th {
+  background: var(--color-surface-container-high);
+  color: var(--color-primary);
+  font-weight: 700;
+  text-align: left;
+  padding: 0.6rem 1rem;
+  border-bottom: 2px solid var(--color-outline-variant);
+  white-space: nowrap;
+}
+.prose-pathfinder td {
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--color-outline-variant);
+  color: var(--color-on-surface-variant);
+  vertical-align: top;
+}
+.prose-pathfinder tr:hover td {
+  background: var(--color-surface-container);
+}
+.prose-pathfinder blockquote {
+  border-left: 3px solid var(--color-primary);
+  padding-left: 1rem;
+  margin: 1em 0;
+  color: var(--color-on-surface-variant);
+  font-style: italic;
+}
+.prose-pathfinder hr {
+  border: none;
+  border-top: 1px solid var(--color-outline-variant);
+  margin: 1.5em 0;
+}
