@@ -93,11 +93,10 @@ export default function ChatAdvisor() {
           {sessions.map(s => (
             <div
               key={s.id}
-              className={`px-4 py-3 cursor-pointer transition-all duration-200 ${
-                s.active
+              className={`px-4 py-3 cursor-pointer transition-all duration-200 ${s.active
                   ? 'border-l-2 border-primary bg-primary/5'
                   : 'border-l-2 border-transparent hover:bg-surface-container'
-              }`}
+                }`}
             >
               <p className={`text-sm font-semibold truncate ${s.active ? 'text-on-surface' : 'text-on-surface-variant'}`}>
                 {s.title}
@@ -160,11 +159,10 @@ export default function ChatAdvisor() {
               className={`flex gap-3 items-start ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
             >
               {/* Avatar */}
-              <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 mt-1 ${
-                msg.role === 'user'
-                  ? 'bg-secondary'
-                  : 'bg-gradient-to-br from-primary to-primary-container'
-              }`}>
+              <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 mt-1 ${msg.role === 'user'
+                ? 'bg-secondary'
+                : 'bg-gradient-to-br from-primary to-primary-container'
+                }`}>
                 <span
                   className={`material-symbols-outlined text-sm ${msg.role === 'user' ? 'text-on-secondary' : 'text-on-primary'}`}
                   style={{ fontVariationSettings: "'FILL' 1" }}
@@ -175,11 +173,10 @@ export default function ChatAdvisor() {
 
               {/* Bubble */}
               <div className={`max-w-xl ${msg.role === 'user' ? 'items-end' : 'items-start'} flex flex-col`}>
-                <div className={`rounded-2xl px-5 py-4 ${
-                  msg.role === 'user'
-                    ? 'bg-surface-container-high rounded-tr-none'
-                    : 'bg-surface-container rounded-tl-none'
-                }`}>
+                <div className={`rounded-2xl px-5 py-4 ${msg.role === 'user'
+                  ? 'bg-surface-container-high rounded-tr-none'
+                  : 'bg-surface-container rounded-tl-none'
+                  }`}>
                   {msg.role === 'user' ? (
                     <p className="text-on-surface text-sm leading-relaxed">{msg.content}</p>
                   ) : (
