@@ -4,8 +4,17 @@ from typing import List, Tuple, Optional
 from langchain_groq import ChatGroq
 from langchain_community.utilities import SerpAPIWrapper
 from langchain_community.tools import Tool
-from langchain_classic.agents import initialize_agent, AgentType
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser, PydanticOutputParser
+from langchain.agents import AgentExecutor, create_react_agent
+from langchain import hub
 from serpapi import GoogleSearch
+
+from backend.ai.models.output_models import (
+    CareerInsightsFullData,
+    MarketAnalysisFullData,
+    ChartData,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -65,34 +74,29 @@ def initialize_llm_and_tools(
 
 def create_agent_with_tools(llm, tools: List[Tool]):
     try:
-        agent_executor = initialize_agent(
-            tools,
-            llm,
-            agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+        # Uses LCEL-native create_react_agent (text-based ReAct, no tool calling needed).
+        # Works with Groq which does not support OpenAI-style function/tool calling.
+        react_prompt = hub.pull("hwchase17/react")
+        agent = create_react_agent(llm, tools, react_prompt)
+        return AgentExecutor(
+            agent=agent,
+            tools=tools,
             verbose=True,
             handle_parsing_errors=True,
             max_iterations=6,
-            early_stopping_method="generate",
         )
-        return agent_executor
     except Exception as e:
         logger.error(f"Error creating agent: {e}")
         return None
 
 
-def generate_career_insights(category: str, subcareer: str, llm: ChatGroq) -> str:
-    try:
-        if llm is None:
-            raise RuntimeError("LLM not initialized")
+# ── Career Insights ───────────────────────────────────────────────────────────
 
-        safe_category = _sanitize_input(category)
-        safe_subcareer = _sanitize_input(subcareer)
-
-        career_prompt = f"""
-You are an expert career development coach. Create a **personal growth blueprint** for someone building a career as a **{safe_subcareer}** in India.
+_CAREER_CONTENT_PROMPT = ChatPromptTemplate.from_template("""
+You are an expert career development coach. Create a **personal growth blueprint** for someone building a career as a **{subcareer}** in India.
 
 This is a CAREER DEVELOPMENT guide — focus on the individual's learning journey, skill-building path, and role progression.
-Do NOT include generic market demand metrics, hiring company lists, or remote-work percentages (those belong in a market analysis).
+Do NOT include generic market demand metrics, hiring company lists, or remote-work percentages.
 
 Reply in this exact structure. Keep each section concise and actionable:
 
@@ -131,96 +135,72 @@ Specific course / certification / book name with platform — one line each.
 
 ---
 
-No fluff. Be specific to the Indian context.
+No fluff. Be specific to the Indian context. Output ONLY the markdown above — no JSON, no code blocks.
+""")
 
-<!-- CHART_DATA
-{{
-    "type": "radar",
-    "labels": ["Technical Skills", "Soft Skills", "Domain Knowledge", "Tools", "Leadership", "Communication"],
-    "data": [85, 70, 90, 80, 60, 75],
-    "label": "Skill Importance Profile (0-100)"
-}}
--->
-Replace data values (0-100) with accurate weights for "{safe_subcareer}".
+_CAREER_DATA_PARSER = PydanticOutputParser(pydantic_object=CareerInsightsFullData)
 
-<!-- INSIGHTS_DATA
-{{
-    "skills": [
-        {{"name": "Skill 1", "score": 90}},
-        {{"name": "Skill 2", "score": 85}},
-        {{"name": "Skill 3", "score": 78}},
-        {{"name": "Skill 4", "score": 70}},
-        {{"name": "Skill 5", "score": 65}}
-    ],
-    "roadmap": [
-        {{"stage": "Beginner", "desc": "One line: what to learn or do at the entry stage.", "icon": "school"}},
-        {{"stage": "Intermediate", "desc": "One line: projects, tools, and skills to grow.", "icon": "trending_up"}},
-        {{"stage": "Advanced", "desc": "One line: leadership, architecture, and mastery.", "icon": "star"}}
-    ],
-    "careerLadder": [
-        {{"role": "Junior Role", "salary": "X-Y LPA", "badge": "Entry"}},
-        {{"role": "Mid Role", "salary": "X-Y LPA", "badge": "Mid"}},
-        {{"role": "Senior Role", "salary": "X-Y LPA", "badge": "Senior"}},
-        {{"role": "Lead Role", "salary": "X-Y LPA", "badge": "Lead"}}
-    ],
-    "outlook": "Concise 1-2 sentence growth outlook for this role in India.",
-    "resources": [
-        "Resource 1 — platform or type",
-        "Resource 2 — platform or type",
-        "Resource 3 — platform or type"
-    ]
-}}
--->
-Fill INSIGHTS_DATA with accurate data for "{safe_subcareer}" in India:
-- skills: top 5 must-have skills with realistic mastery-importance scores (0-100)
-- roadmap: 3 stages with concise actionable one-line descriptions (keep icon values as "school", "trending_up", "star")
-- careerLadder: 3-4 role rungs with realistic INR LPA ranges and badge labels (Entry/Mid/Senior/Lead)
-- outlook: concise 1-2 sentence career growth outlook for India
-- resources: 3 specific course/certification/book names with platform
-"""
-        logger.info(f"Generating career insights for {safe_subcareer}...")
-        output = llm.invoke(career_prompt)
-        return output.content if hasattr(output, "content") else str(output)
+_CAREER_DATA_PROMPT = ChatPromptTemplate.from_template("""
+You are a career data assistant for the Indian job market.
+For the role "{subcareer}" in India, return accurate structured data for bento grid cards and chart visualization.
 
-    except Exception as e:
-        logger.error(f"Error generating career insights: {e}")
-        return f"❌ Unable to generate career insights. Error: {e}"
+{format_instructions}
+
+Field guidance:
+- insights.skills: top 5 must-have skills, score 0-100 (importance/demand weight)
+- insights.roadmap: exactly 3 stages; icon must be one of "school", "trending_up", "star"
+- insights.careerLadder: 3-4 rungs with realistic INR LPA ranges; badge must be Entry/Mid/Senior/Lead
+- insights.outlook: 1-2 sentences on India-specific growth trajectory
+- insights.resources: 3 specific course/cert/book names with platform
+- chart.type: "radar"
+- chart.labels: ["Technical Skills", "Soft Skills", "Domain Knowledge", "Tools", "Leadership", "Communication"]
+- chart.data: 6 integers 0-100 representing skill importance weights for {subcareer}
+- chart.label: "Skill Importance Profile (0-100)"
+""")
 
 
-def generate_market_analysis(
-    subcareer: str,
-    llm: ChatGroq,
-    search_func=None,
-) -> str:
+def generate_career_insights(
+    category: str, subcareer: str, llm: ChatGroq
+) -> Tuple[str, Optional[dict], Optional[dict]]:
     try:
         if llm is None:
             raise RuntimeError("LLM not initialized")
 
+        safe_category = _sanitize_input(category)
         safe_subcareer = _sanitize_input(subcareer)
-        logger.info(f"Fetching live market data for {safe_subcareer}...")
 
-        raw_data = ""
-        if search_func is not None:
-            search_query = (
-                f"Current job market for {safe_subcareer} in India 2024-2025: "
-                f"demand trend, salary ranges (entry/mid/senior/lead in LPA), "
-                f"top hiring companies, hot cities, in-demand skills, "
-                f"skills gap, automation risk, future outlook, freelance opportunities."
-            )
-            try:
-                raw_data = search_func(search_query)
-            except Exception as search_err:
-                logger.warning(f"Search failed, falling back to LLM knowledge: {search_err}")
+        content_chain = _CAREER_CONTENT_PROMPT | llm | StrOutputParser()
+        data_chain = _CAREER_DATA_PROMPT | llm | _CAREER_DATA_PARSER
 
-        format_prompt = f"""
+        logger.info(f"Generating career insights for {safe_subcareer}...")
+        markdown = content_chain.invoke({"subcareer": safe_subcareer, "category": safe_category})
+
+        try:
+            data: CareerInsightsFullData = data_chain.invoke({
+                "subcareer": safe_subcareer,
+                "format_instructions": _CAREER_DATA_PARSER.get_format_instructions(),
+            })
+            return markdown, data.insights.model_dump(), data.chart.model_dump()
+        except Exception as data_err:
+            logger.error(f"Career insights data chain failed: {data_err}")
+            return markdown, None, None
+
+    except Exception as e:
+        logger.error(f"Error generating career insights: {e}")
+        return f"❌ Unable to generate career insights. Error: {e}", None, None
+
+
+# ── Market Analysis ───────────────────────────────────────────────────────────
+
+_MARKET_CONTENT_PROMPT = ChatPromptTemplate.from_template("""
 You are an expert Market Intelligence Analyst for the Indian job market.
-Using the live data below, produce a **data-driven hiring market report** for "{safe_subcareer}" in India.
+Using the live data below, produce a **data-driven hiring market report** for "{subcareer}" in India.
 
 RAW LIVE DATA:
-{raw_data if raw_data else "Use your latest training knowledge for the Indian job market."}
+{live_data}
 
 This is a MARKET INTELLIGENCE report — focus on what employers are doing, what the market signals are, and whether this is a good time to be in this field.
-Do NOT include personal learning roadmaps, course recommendations, or beginner/intermediate/advanced progression guides (those belong in a career insights report).
+Do NOT include personal learning roadmaps or course recommendations.
 
 Reply in this EXACT structure. Keep each section to 3-5 bullet points max. Be data-driven and realistic for India.
 
@@ -293,52 +273,139 @@ Reply in this EXACT structure. Keep each section to 3-5 bullet points max. Be da
 
 ---
 
-<!-- CHART_DATA
-{{
-    "type": "bar",
-    "labels": ["Entry Level", "Mid Level", "Senior Level", "Lead/Architect"],
-    "data": [low_val, mid_val, high_val, ultra_val],
-    "unit": "LPA (INR)",
-    "label": "Avg Salary Range (LPA)"
-}}
--->
-Replace values with realistic integers for "{safe_subcareer}".
+Output ONLY the markdown above — no JSON, no code blocks.
+""")
 
-<!-- INSIGHTS_DATA
-{{
-    "salary": {{
-        "entry": "X-Y LPA",
-        "median": "X-Y LPA",
-        "senior": "X-Y LPA",
-        "top": "X-Y LPA"
-    }},
-    "growth": "+XX%",
-    "confidence": 95,
-    "skills": ["Skill1", "Skill2", "Skill3", "Skill4", "Skill5", "Skill6"],
-    "locations": [
-        {{"city": "City1", "pct": 40}},
-        {{"city": "City2", "pct": 28}},
-        {{"city": "City3", "pct": 18}}
-    ],
-    "remotePercent": 45,
-    "trajectory": [32, 41, 48, 55, 67, 79, 90]
-}}
--->
-Fill INSIGHTS_DATA with real market data for "{safe_subcareer}" in India:
-- salary: actual INR LPA ranges for each level
-- growth: projected 12-month demand growth (e.g. "+18%")
-- confidence: your confidence in this data 0-100
-- skills: top 6 skills most requested in active job postings RIGHT NOW
-- locations: top 3 Indian cities with % share of job postings (must sum to ≤100)
-- remotePercent: % of roles that are remote-friendly (integer)
-- trajectory: 7 integers (0-100) showing demand trend from 6 months ago to today (ascending if growing)
-"""
-        output = llm.invoke(format_prompt)
-        return output.content if hasattr(output, "content") else str(output)
+_MARKET_DATA_PARSER = PydanticOutputParser(pydantic_object=MarketAnalysisFullData)
+
+_MARKET_DATA_PROMPT = ChatPromptTemplate.from_template("""
+You are a market data assistant for the Indian job market.
+Using the live data below, return accurate structured data for "{subcareer}" in India.
+
+RAW LIVE DATA:
+{live_data}
+
+{format_instructions}
+
+Field guidance:
+- insights.salary: actual INR LPA ranges for entry/median/senior/top levels
+- insights.growth: projected 12-month demand growth (e.g. "+18%")
+- insights.confidence: your confidence in this data 0-100
+- insights.skills: top 6 skills most requested in active job postings RIGHT NOW
+- insights.locations: top 3 Indian cities with % share of job postings (must sum to ≤100)
+- insights.remotePercent: % of roles that are remote-friendly (integer)
+- insights.trajectory: 7 integers 0-100 showing demand trend from 6 months ago to today
+- chart.type: "bar"
+- chart.labels: ["Entry Level", "Mid Level", "Senior Level", "Lead/Architect"]
+- chart.data: 4 realistic integers representing average LPA for each level for {subcareer}
+- chart.unit: "LPA (INR)"
+- chart.label: "Avg Salary Range (LPA)"
+""")
+
+
+def generate_market_analysis(
+    subcareer: str,
+    llm: ChatGroq,
+    search_func=None,
+) -> Tuple[str, Optional[dict], Optional[dict]]:
+    try:
+        if llm is None:
+            raise RuntimeError("LLM not initialized")
+
+        safe_subcareer = _sanitize_input(subcareer)
+        logger.info(f"Fetching live market data for {safe_subcareer}...")
+
+        live_data = "Use your latest training knowledge for the Indian job market."
+        if search_func is not None:
+            search_query = (
+                f"Current job market for {safe_subcareer} in India 2024-2025: "
+                f"demand trend, salary ranges (entry/mid/senior/lead in LPA), "
+                f"top hiring companies, hot cities, in-demand skills, "
+                f"skills gap, automation risk, future outlook, freelance opportunities."
+            )
+            try:
+                live_data = search_func(search_query)
+            except Exception as search_err:
+                logger.warning(f"Search failed, falling back to LLM knowledge: {search_err}")
+
+        content_chain = _MARKET_CONTENT_PROMPT | llm | StrOutputParser()
+        data_chain = _MARKET_DATA_PROMPT | llm | _MARKET_DATA_PARSER
+
+        markdown = content_chain.invoke({"subcareer": safe_subcareer, "live_data": live_data})
+
+        try:
+            data: MarketAnalysisFullData = data_chain.invoke({
+                "subcareer": safe_subcareer,
+                "live_data": live_data,
+                "format_instructions": _MARKET_DATA_PARSER.get_format_instructions(),
+            })
+            return markdown, data.insights.model_dump(), data.chart.model_dump()
+        except Exception as data_err:
+            logger.error(f"Market analysis data chain failed: {data_err}")
+            return markdown, None, None
 
     except Exception as e:
         logger.error(f"Error generating market analysis: {e}")
-        return f"❌ Unable to fetch market analysis. Error: {e}"
+        return f"❌ Unable to fetch market analysis. Error: {e}", None, None
+
+
+# ── College Recommendations ───────────────────────────────────────────────────
+
+_COLLEGE_CONTENT_PROMPT = ChatPromptTemplate.from_template("""
+You are an expert education and placement analyst for India.
+
+Generate a **highly accurate college recommendation list** for:
+Career Path: **{subcareer}**
+Location Context: **{location_context}**
+
+{scope_line}
+
+Strictly follow the output format below.
+
+---
+
+### **Output Format (MANDATORY)**
+
+1. **Markdown Table ONLY** with EXACT columns:
+| College | City | Tier | Admission | Fees (₹/yr) | Avg Package (LPA) |
+
+#### Constraints:
+- 8-10 colleges MAX
+- Prioritize relevance to "{subcareer}" (placements + specialization)
+- Tier must be one of: Premier / State Govt / Private
+- Fees: Use compact format (e.g., 50K, 1.5L, 2-3L)
+- Avg Package: realistic Indian data (e.g., 6, 8-12)
+- Admission: exam or mode only (e.g., JEE Main, MHT-CET, Direct)
+- Keep college names SHORT
+- Ensure diversity: mix of Tier-1, Tier-2, Tier-3
+
+---
+
+2. **Exactly 3 Bullet Points (One Line Each)**:
+- Top entrance exam to focus on
+- Best certification to add alongside degree
+- #1 practical tip to maximize placements
+
+---
+
+Output ONLY the markdown above — no JSON, no code blocks.
+""")
+
+_COLLEGE_CHART_PARSER = PydanticOutputParser(pydantic_object=ChartData)
+
+_COLLEGE_CHART_PROMPT = ChatPromptTemplate.from_template("""
+You are a placement data assistant for Indian colleges.
+For the career path "{subcareer}", provide realistic average placement package data by college tier.
+
+{format_instructions}
+
+Field guidance:
+- type: "bar"
+- labels: ["Premier/IIT/NIT", "Top Private", "State Govt", "Mid Private", "Diploma/Cert"]
+- data: 5 realistic LPA integers for {subcareer} graduates from each tier
+- unit: "LPA"
+- label: "Avg Placement Package (LPA)"
+""")
 
 
 def generate_college_recommendations(
@@ -346,7 +413,7 @@ def generate_college_recommendations(
     llm: ChatGroq,
     location: str = None,
     district: str = None,
-) -> str:
+) -> Tuple[str, Optional[dict]]:
     try:
         if llm is None:
             raise RuntimeError("LLM not initialized")
@@ -368,96 +435,39 @@ def generate_college_recommendations(
             scope_line = 'Include IITs, NITs, and top state/private colleges across India.'
             location_context = 'in India'
 
-        college_prompt = f"""
-You are an expert education and placement analyst for India.
+        content_chain = _COLLEGE_CONTENT_PROMPT | llm | StrOutputParser()
+        chart_chain = _COLLEGE_CHART_PROMPT | llm | _COLLEGE_CHART_PARSER
 
-Generate a **highly accurate college recommendation list** for:
-Career Path: **{safe_subcareer}**
-Location Context: **{location_context}**
-
-{scope_line}
-
-Strictly follow the output format below.
-
----
-
-### **Output Format (MANDATORY)**
-
-1. **Markdown Table ONLY** with EXACT columns:
-| College | City | Tier | Admission | Fees (₹/yr) | Avg Package (LPA) |
-
-#### Constraints:
-- 8-10 colleges MAX
-- Prioritize relevance to "{safe_subcareer}" (placements + specialization)
-- Tier must be one of: Premier / State Govt / Private
-- Fees: Use compact format (e.g., 50K, 1.5L, 2-3L)
-- Avg Package: realistic Indian data (e.g., 6, 8-12)
-- Admission: exam or mode only (e.g., JEE Main, MHT-CET, Direct)
-- Keep college names SHORT
-- Ensure diversity: mix of Tier-1, Tier-2, Tier-3
-
----
-
-2. **Exactly 3 Bullet Points (One Line Each)**:
-- Top entrance exam to focus on
-- Best certification to add alongside degree
-- #1 practical tip to maximize placements
-
----
-
-<!-- CHART_DATA
-{{
-    "type": "bar",
-    "labels": ["Premier/IIT/NIT", "Top Private", "State Govt", "Mid Private", "Diploma/Cert"],
-    "data": [25, 14, 7, 5, 3],
-    "unit": "LPA",
-    "label": "Avg Placement Package (LPA)"
-}}
--->
-Replace the data values with realistic LPA figures specific to "{safe_subcareer}".
-"""
         logger.info(
             f"Generating college recommendations for {safe_subcareer}"
             + (f" in {safe_district}," if safe_district else "")
             + (f" {safe_location}" if safe_location else " (all India)")
         )
-        output = llm.invoke(college_prompt)
-        return output.content if hasattr(output, "content") else str(output)
+        markdown = content_chain.invoke({
+            "subcareer": safe_subcareer,
+            "location_context": location_context,
+            "scope_line": scope_line,
+        })
+
+        try:
+            chart: ChartData = chart_chain.invoke({
+                "subcareer": safe_subcareer,
+                "format_instructions": _COLLEGE_CHART_PARSER.get_format_instructions(),
+            })
+            return markdown, chart.model_dump()
+        except Exception as chart_err:
+            logger.error(f"College chart data chain failed: {chart_err}")
+            return markdown, None
 
     except Exception as e:
         logger.error(f"Error generating college recommendations: {e}")
-        return f"❌ Unable to generate college recommendations. Error: {e}"
+        return f"❌ Unable to generate college recommendations. Error: {e}", None
 
 
-def generate_resume_feedback(
-    resume_text: str,
-    target_role: str,
-    llm: ChatGroq,
-    scrub_pii: bool = False,
-) -> str:
-    try:
-        if llm is None:
-            raise RuntimeError("LLM not initialized")
+# ── Resume Feedback ───────────────────────────────────────────────────────────
 
-        logger.warning(
-            "PII notice: resume content will be sent to an external LLM service (Groq). "
-            "Ensure compliance with your data-handling policies."
-        )
-
-        truncation_notice = ""
-        if len(resume_text) > MAX_RESUME_CHARS:
-            resume_text = resume_text[:MAX_RESUME_CHARS]
-            truncation_notice = (
-                f"\n\n[Note: Resume was truncated to {MAX_RESUME_CHARS} characters for processing.]"
-            )
-
-        if scrub_pii:
-            resume_text = _scrub_pii(resume_text)
-
-        safe_role = _sanitize_input(target_role)
-
-        resume_prompt = f"""
-As an expert resume coach, analyze the following resume for the target role: "{safe_role}"
+_RESUME_PROMPT = ChatPromptTemplate.from_template(
+    """As an expert resume coach, analyze the following resume for the target role: "{target_role}"
 
 **Resume Content**:
 {resume_text}{truncation_notice}
@@ -507,14 +517,50 @@ Provide comprehensive feedback in the following structure:
 
 Be constructive, specific, and actionable. Use markdown formatting with clear sections.
 """
+)
+
+
+def generate_resume_feedback(
+    resume_text: str,
+    target_role: str,
+    llm: ChatGroq,
+    scrub_pii: bool = False,
+) -> str:
+    try:
+        if llm is None:
+            raise RuntimeError("LLM not initialized")
+
+        logger.warning(
+            "PII notice: resume content will be sent to an external LLM service (Groq). "
+            "Ensure compliance with your data-handling policies."
+        )
+
+        truncation_notice = ""
+        if len(resume_text) > MAX_RESUME_CHARS:
+            resume_text = resume_text[:MAX_RESUME_CHARS]
+            truncation_notice = (
+                f"\n\n[Note: Resume was truncated to {MAX_RESUME_CHARS} characters for processing.]"
+            )
+
+        if scrub_pii:
+            resume_text = _scrub_pii(resume_text)
+
+        safe_role = _sanitize_input(target_role)
+        chain = _RESUME_PROMPT | llm | StrOutputParser()
+
         logger.info(f"Analyzing resume for {safe_role}...")
-        output = llm.invoke(resume_prompt)
-        return output.content if hasattr(output, "content") else str(output)
+        return chain.invoke({
+            "target_role": safe_role,
+            "resume_text": resume_text,
+            "truncation_notice": truncation_notice,
+        })
 
     except Exception as e:
         logger.error(f"Error generating resume feedback: {e}")
         return f"❌ Unable to analyze resume. Error: {e}"
 
+
+# ── Job Search ────────────────────────────────────────────────────────────────
 
 def search_jobs(role: str, location: str = "India", api_key: str = None) -> List[dict]:
     try:
