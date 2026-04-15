@@ -93,7 +93,7 @@ export default function CareerInsights() {
           }
         }
       })
-      .catch(() => {})
+      .catch(() => setError('Failed to load career list. Please refresh the page.'))
   }, [])
 
   const handleAnalyze = async () => {
@@ -104,6 +104,10 @@ export default function CareerInsights() {
     setResult('')
     setChartData(null)
     setInsights(null)
+    const timeout = setTimeout(() => {
+      setLoading(false)
+      setError('Analysis is taking too long. Please try again.')
+    }, 60000)
     try {
       const { data } = await api.post('/career-insights', { category, subcareer })
       setInsights(data.insights || null)
@@ -112,6 +116,7 @@ export default function CareerInsights() {
     } catch (err) {
       setError(err.response?.data?.detail || 'Something went wrong. Please try again.')
     } finally {
+      clearTimeout(timeout)
       setLoading(false)
     }
   }
@@ -159,7 +164,14 @@ export default function CareerInsights() {
               </label>
               <select
                 value={category}
-                onChange={e => { setCategory(e.target.value); setSubcareer(careers[e.target.value]?.[0] || '') }}
+                onChange={e => {
+                  setCategory(e.target.value)
+                  setSubcareer(careers[e.target.value]?.[0] || '')
+                  setResult('')
+                  setInsights(null)
+                  setChartData(null)
+                  sessionStorage.removeItem(SESSION_KEY)
+                }}
                 className="w-full bg-surface-container-lowest border border-outline/20 rounded-lg px-4 py-3 text-on-surface text-sm focus:outline-none focus:border-primary transition-colors"
               >
                 {Object.keys(careers).map(cat => <option key={cat} value={cat}>{cat}</option>)}

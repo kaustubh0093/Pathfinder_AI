@@ -76,6 +76,10 @@ export default function JobsInternships() {
     setError('')
     setJobs([])
     setSearched(false)
+    const timeout = setTimeout(() => {
+      setLoading(false)
+      setError('Search is taking too long. Please try again.')
+    }, 60000)
     try {
       const effectiveRole =
         jobTypeFilter === 'All'
@@ -87,6 +91,7 @@ export default function JobsInternships() {
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to fetch jobs. Please try again.')
     } finally {
+      clearTimeout(timeout)
       setLoading(false)
     }
   }
@@ -252,13 +257,18 @@ export default function JobsInternships() {
                       src={job.thumbnail}
                       alt={job.company}
                       className="w-10 h-10 rounded-xl object-contain bg-surface-container-highest p-1 shrink-0"
-                      onError={e => { e.target.style.display = 'none' }}
+                      onError={e => {
+                        e.target.style.display = 'none'
+                        e.target.nextSibling.style.display = 'flex'
+                      }}
                     />
-                  ) : (
-                    <div className="w-10 h-10 rounded-xl bg-surface-container-highest flex items-center justify-center shrink-0">
-                      <span className="material-symbols-outlined text-on-surface-variant text-lg">business</span>
-                    </div>
-                  )}
+                  ) : null}
+                  <div
+                    className="w-10 h-10 rounded-xl bg-surface-container-highest items-center justify-center shrink-0"
+                    style={{ display: job.thumbnail ? 'none' : 'flex' }}
+                  >
+                    <span className="material-symbols-outlined text-on-surface-variant text-lg">business</span>
+                  </div>
                   <div className="min-w-0">
                     <p className="text-on-surface text-sm font-bold truncate">{job.title}</p>
                     <p className="text-on-surface-variant text-xs truncate">{job.company}</p>

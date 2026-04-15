@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import api from '../api/client.js'
@@ -26,6 +26,7 @@ function loadCache() {
 
 export default function CollegeAdvisor() {
   const cache = loadCache()
+  const careerPathRef = useRef(null)
   const [careerPath, setCareerPath] = useState(cache?.careerPath ?? '')
   const [location, setLocation] = useState(cache?.location ?? 'India (All Regions)')
   const [district, setDistrict] = useState(cache?.district ?? '')
@@ -45,6 +46,10 @@ export default function CollegeAdvisor() {
     setLoading(true)
     setError('')
     setResult('')
+    const timeout = setTimeout(() => {
+      setLoading(false)
+      setError('Analysis is taking too long. Please try again.')
+    }, 60000)
     try {
       const { data } = await api.post('/college-recommendations', {
         subcareer: careerPath,
@@ -55,6 +60,7 @@ export default function CollegeAdvisor() {
     } catch (err) {
       setError(err.response?.data?.detail || 'Something went wrong. Please try again.')
     } finally {
+      clearTimeout(timeout)
       setLoading(false)
     }
   }
@@ -62,46 +68,32 @@ export default function CollegeAdvisor() {
   return (
     <div className="max-w-7xl mx-auto space-y-12">
       {/* Hero Header */}
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <div className="max-w-2xl">
-          <div className="flex items-center gap-2 mb-4">
-            <span className="bg-tertiary/20 text-tertiary px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-tertiary shadow-[0_0_8px_#26fedc]"></span>
-              AI Intelligence Active
-            </span>
-          </div>
-          <h1 className="font-headline text-5xl font-extrabold text-on-surface tracking-tighter leading-tight mb-4">
-            Discover Your <span className="text-gradient">Future Campus</span>
-          </h1>
-          <p className="text-on-surface-variant text-lg max-w-xl font-light">
-            Personalized higher education consulting powered by deep learning. We analyze thousands
-            of metrics to find where you truly belong.
-          </p>
-        </div>
+      <header className="space-y-8">
 
-        {/* Search Controls */}
-        <div className="w-full md:w-auto space-y-3">
+        {/* Search Controls — full-width row above title */}
+        <div className="bg-surface-container-high rounded-xl px-6 py-5 flex flex-col sm:flex-row items-end gap-4">
           {/* Career Path Input */}
-          <div className="bg-surface-container p-4 rounded-xl">
+          <div className="flex-1 min-w-0">
             <label className="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold block mb-2">
               Your Career Goal *
             </label>
             <input
+              ref={careerPathRef}
               type="text"
               value={careerPath}
               onChange={e => setCareerPath(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleRecommend()}
               placeholder="e.g. AI Engineer, Data Scientist…"
-              className="w-full min-w-[260px] bg-surface-container-highest border-none text-on-surface rounded-lg py-3 px-4 focus:ring-2 focus:ring-primary focus:outline-none transition-all text-sm"
+              className="w-full bg-surface-container-highest border-none text-on-surface rounded-lg py-3 px-4 focus:ring-2 focus:ring-primary focus:outline-none transition-all text-sm"
             />
           </div>
 
           {/* Location Filter */}
-          <div className="bg-surface-container p-4 rounded-xl">
+          <div className="flex-1 min-w-0">
             <label className="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold block mb-2">
               Filter by State
             </label>
-            <div className="relative min-w-[260px]">
+            <div className="relative">
               <select
                 value={location}
                 onChange={e => setLocation(e.target.value)}
@@ -118,9 +110,9 @@ export default function CollegeAdvisor() {
           </div>
 
           {/* District Filter */}
-          <div className="bg-surface-container p-4 rounded-xl">
+          <div className="flex-1 min-w-0">
             <label className="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold block mb-2">
-              Filter by District <span className="normal-case text-on-surface-variant/50">(optional)</span>
+              District <span className="normal-case text-on-surface-variant/50">(optional)</span>
             </label>
             <input
               type="text"
@@ -128,14 +120,14 @@ export default function CollegeAdvisor() {
               onChange={e => setDistrict(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleRecommend()}
               placeholder="e.g. Pune, Coimbatore…"
-              className="w-full min-w-[260px] bg-surface-container-highest border-none text-on-surface rounded-lg py-3 px-4 focus:ring-2 focus:ring-primary focus:outline-none transition-all text-sm"
+              className="w-full bg-surface-container-highest border-none text-on-surface rounded-lg py-3 px-4 focus:ring-2 focus:ring-primary focus:outline-none transition-all text-sm"
             />
           </div>
 
           <button
             onClick={handleRecommend}
             disabled={loading || !careerPath.trim()}
-            className="w-full bg-gradient-primary text-on-primary py-3 rounded-xl font-bold shadow-lg hover:shadow-primary/25 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm"
+            className="shrink-0 bg-gradient-primary text-on-primary px-8 py-3 rounded-xl font-bold shadow-lg hover:shadow-primary/25 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-sm"
           >
             {loading ? (
               <>
@@ -150,6 +142,24 @@ export default function CollegeAdvisor() {
             )}
           </button>
         </div>
+
+        {/* Title & description — below the controls */}
+        <div>
+          <div className="flex items-center gap-2 mb-4">
+            <span className="bg-tertiary/20 text-tertiary px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-tertiary shadow-[0_0_8px_#26fedc]"></span>
+              AI Intelligence Active
+            </span>
+          </div>
+          <h1 className="font-headline text-5xl font-extrabold text-on-surface tracking-tighter leading-tight mb-4">
+            Discover Your <span className="text-gradient">Future Campus</span>
+          </h1>
+          <p className="text-on-surface-variant text-lg max-w-xl font-light">
+            Personalized higher education consulting powered by deep learning. We analyze thousands
+            of metrics to find where you truly belong.
+          </p>
+        </div>
+
       </header>
 
       {/* Error */}
@@ -222,7 +232,7 @@ export default function CollegeAdvisor() {
               </p>
               <div className="flex gap-4">
                 <button
-                  onClick={() => document.querySelector('input[type="text"]')?.focus()}
+                  onClick={() => { careerPathRef.current?.focus(); careerPathRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }) }}
                   className="px-6 py-2 bg-gradient-primary rounded-lg text-on-primary font-bold transition-transform hover:scale-105 cursor-pointer"
                 >
                   Get Started

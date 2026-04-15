@@ -4,7 +4,7 @@ import threading
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
@@ -47,8 +47,11 @@ def get_ai_components():
                 if not tmp_llm or not tools:
                     logger.error("LLM initialization returned no LLM or empty tools list")
                     return None, None, None
-                _search_func = tools[0].func
-                _agent = create_agent_with_tools(tmp_llm, tools)
+                tmp_search_func = tools[0].func
+                tmp_agent = create_agent_with_tools(tmp_llm, tools)
+                # Set _llm last so the outer guard stays valid until all globals are ready
+                _search_func = tmp_search_func
+                _agent = tmp_agent
                 _llm = tmp_llm
     return _llm, _agent, _search_func
 
@@ -59,9 +62,23 @@ class CareerInsightRequest(BaseModel):
     category: str
     subcareer: str
 
+    @field_validator('category', 'subcareer')
+    @classmethod
+    def must_not_be_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Field must not be empty')
+        return v.strip()
+
 
 class MarketRequest(BaseModel):
     subcareer: str
+
+    @field_validator('subcareer')
+    @classmethod
+    def must_not_be_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Field must not be empty')
+        return v.strip()
 
 
 class CollegeRequest(BaseModel):
@@ -69,15 +86,36 @@ class CollegeRequest(BaseModel):
     location: Optional[str] = None
     district: Optional[str] = None
 
+    @field_validator('subcareer')
+    @classmethod
+    def must_not_be_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Field must not be empty')
+        return v.strip()
+
 
 class ChatRequest(BaseModel):
     message: str
     history: List[dict] = []
 
+    @field_validator('message')
+    @classmethod
+    def must_not_be_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Message must not be empty')
+        return v.strip()
+
 
 class JobRequest(BaseModel):
     role: str
     location: str = "India"
+
+    @field_validator('role')
+    @classmethod
+    def must_not_be_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Role must not be empty')
+        return v.strip()
 
 
 # ── Chat chain (module-level so it's built once) ─────────────────────────────
@@ -163,8 +201,12 @@ async def resume_analysis(
     file: Optional[UploadFile] = File(default=None),
 ):
     if file and file.filename:
-        content = await file.read()
-        resume_text = extract_text_from_bytes(content, file.filename)
+        try:
+            content = await file.read()
+            resume_text = extract_text_from_bytes(content, file.filename)
+        except Exception as e:
+            logger.error(f"File extraction failed: {e}")
+            raise HTTPException(status_code=400, detail="Could not read the uploaded file. Please try a different file or paste the text directly.")
 
     if not resume_text.strip():
         raise HTTPException(status_code=400, detail="No resume content provided.")

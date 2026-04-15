@@ -49,7 +49,10 @@ export default function ResumeCoach() {
     setLoading(true)
     setError('')
     setResult('')
-
+    const timeout = setTimeout(() => {
+      setLoading(false)
+      setError('Analysis is taking too long. Please try again.')
+    }, 60000)
     try {
       const formData = new FormData()
       formData.append('target_role', targetRole)
@@ -63,6 +66,7 @@ export default function ResumeCoach() {
     } catch (err) {
       setError(err.response?.data?.detail || 'Something went wrong. Please try again.')
     } finally {
+      clearTimeout(timeout)
       setLoading(false)
     }
   }

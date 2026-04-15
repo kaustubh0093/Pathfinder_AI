@@ -354,41 +354,62 @@ def generate_market_analysis(
 _COLLEGE_CONTENT_PROMPT = ChatPromptTemplate.from_template("""
 You are an expert education and placement analyst for India.
 
-Generate a **highly accurate college recommendation list** for:
+Generate a **highly accurate college recommendation report** for:
 Career Path: **{subcareer}**
 Location Context: **{location_context}**
 
 {scope_line}
 
-Strictly follow the output format below.
+Strictly follow the output format below. Be specific, data-driven, and realistic.
 
 ---
 
 ### **Output Format (MANDATORY)**
 
-1. **Markdown Table ONLY** with EXACT columns:
-| College | City | Tier | Admission | Fees (₹/yr) | Avg Package (LPA) |
+## Top College Recommendations
+
+Markdown Table with EXACT columns:
+| College | City | Tier | Course | Duration | Fees (₹/yr) | Avg Package (LPA) | Top Recruiters | Admission |
 
 #### Constraints:
-- 8-10 colleges MAX
+- 10-12 colleges
 - Prioritize relevance to "{subcareer}" (placements + specialization)
-- Tier must be one of: Premier / State Govt / Private
-- Fees: Use compact format (e.g., 50K, 1.5L, 2-3L)
+- Tier: Premier / State Govt / Private
+- Course: specific degree name (e.g., B.Tech CSE, MBA, BCA)
+- Duration: e.g., 4 yrs, 2 yrs
+- Fees: compact format (e.g., 50K, 1.5L, 2-3L)
 - Avg Package: realistic Indian data (e.g., 6, 8-12)
-- Admission: exam or mode only (e.g., JEE Main, MHT-CET, Direct)
-- Keep college names SHORT
-- Ensure diversity: mix of Tier-1, Tier-2, Tier-3
+- Top Recruiters: 2-3 real companies that hire from that college for this role
+- Admission: exam or mode (e.g., JEE Main, CAT, MHT-CET, Direct)
+- Mix Premier / State Govt / Private tiers
 
 ---
 
-2. **Exactly 3 Bullet Points (One Line Each)**:
-- Top entrance exam to focus on
-- Best certification to add alongside degree
-- #1 practical tip to maximize placements
+## Entrance Exams to Target
+
+List 4-5 relevant entrance exams with a one-line description of what each tests or leads to.
 
 ---
 
-Output ONLY the markdown above — no JSON, no code blocks.
+## Key Certifications to Pursue Alongside Degree
+
+List 3-4 certifications that significantly improve placement chances for "{subcareer}". Include the issuing body.
+
+---
+
+## Placement Maximization Tips
+
+5 specific, actionable tips to maximize placement chances for "{subcareer}" — internships, projects, competitive platforms, networking, etc.
+
+---
+
+## Salary Outlook After Graduation
+
+One short paragraph on realistic starting salary range, growth trajectory, and which cities/companies pay the most for "{subcareer}" freshers.
+
+---
+
+Output ONLY the markdown above — no JSON, no code blocks, no extra commentary.
 """)
 
 _COLLEGE_CHART_PARSER = PydanticOutputParser(pydantic_object=ChartData)
@@ -602,7 +623,7 @@ def search_jobs(role: str, location: str = "India", api_key: str = None) -> List
 
                     for job in page_results:
                         job_id = f"{job.get('title')}-{job.get('company_name')}"
-                        if any(f"{j['title']}-{j['company']}" == job_id for j in all_jobs):
+                        if any(f"{j['title']}-{j['company_name_raw']}" == job_id for j in all_jobs):
                             continue
 
                         apply_link = "#"
@@ -615,6 +636,7 @@ def search_jobs(role: str, location: str = "India", api_key: str = None) -> List
                         all_jobs.append({
                             "title": job.get("title", "Unknown Role"),
                             "company": job.get("company_name", "Unknown Company"),
+                            "company_name_raw": job.get("company_name", ""),
                             "location": job.get("location", "India"),
                             "description": truncated_desc,
                             "link": apply_link,

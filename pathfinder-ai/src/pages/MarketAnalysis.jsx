@@ -43,6 +43,10 @@ export default function MarketAnalysis() {
     setResult('')
     setChartData(null)
     setInsights(null)
+    const timeout = setTimeout(() => {
+      setLoading(false)
+      setError('Analysis is taking too long. Please try again.')
+    }, 60000)
     try {
       const { data } = await api.post('/market-analysis', { subcareer: role })
       setChartData(data.chartData || extractChartData(data.result || ''))
@@ -51,12 +55,13 @@ export default function MarketAnalysis() {
     } catch (err) {
       setError(err.response?.data?.detail || 'Something went wrong. Please try again.')
     } finally {
+      clearTimeout(timeout)
       setLoading(false)
     }
   }
 
   // Derive display values — live when insights exist, demo otherwise
-  const trajectory = insights?.trajectory ?? [32, 41, 48, 55, 67, 79, 90]
+  const trajectory = insights?.trajectory ?? []
   const salaryEntry  = insights?.salary?.entry  ?? null
   const salaryMedian = insights?.salary?.median ?? null
   const salarySenior = insights?.salary?.senior ?? null
@@ -152,7 +157,7 @@ export default function MarketAnalysis() {
             </div>
             <h3 className="font-headline text-2xl font-bold mb-6">Employment Trajectory</h3>
             <div className="h-52 flex items-end gap-2 px-2">
-              {trajectory.map((h, i) => {
+              {isLive ? trajectory.map((h, i) => {
                 const isLast = i === trajectory.length - 1
                 return (
                   <div
@@ -164,13 +169,15 @@ export default function MarketAnalysis() {
                         ? 'bg-primary-container/80'
                         : 'bg-surface-variant group-hover:bg-primary/40'
                     }`}
-                    style={{
-                      height: `${h}%`,
-                      transitionDelay: `${i * 60}ms`,
-                    }}
-                  ></div>
+                    style={{ height: `${h}%`, transitionDelay: `${i * 60}ms` }}
+                  />
                 )
-              })}
+              }) : (
+                <div className="flex-1 flex flex-col items-center justify-center text-center gap-2 opacity-30">
+                  <span className="material-symbols-outlined text-4xl text-on-surface-variant">bar_chart</span>
+                  <p className="text-on-surface-variant text-xs">Search a role to see live trajectory</p>
+                </div>
+              )}
             </div>
             <div className="flex justify-between text-[10px] text-outline mt-1 px-2">
               {['6M ago', '5M', '4M', '3M', '2M', '1M', 'Now'].map(l => (
@@ -298,7 +305,7 @@ export default function MarketAnalysis() {
                   </div>
                 ))
               ) : (
-                [{ city: 'Bangalore', pct: 42 }, { city: 'Mumbai', pct: 28 }, { city: 'Delhi NCR', pct: 18 }].map((loc, i) => (
+                [{ city: 'Bangalore', pct: 42 }, { city: 'Mumbai', pct: 28 }, { city: 'Delhi NCR', pct: 18 }].map((loc) => (
                   <div key={loc.city} className="opacity-30">
                     <div className="flex justify-between items-center mb-1">
                       <span className="text-on-background text-sm">{loc.city}</span>
