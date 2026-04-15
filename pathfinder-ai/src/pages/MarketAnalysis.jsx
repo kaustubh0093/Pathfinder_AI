@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Bar } from 'react-chartjs-2'
@@ -15,16 +15,29 @@ const SKILL_COLORS = [
   'bg-secondary/10 text-secondary border-secondary/20',
 ]
 
+const SESSION_KEY = 'marketAnalysis_cache'
+function loadCache() {
+  try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null') } catch { return null }
+}
+
 export default function MarketAnalysis() {
-  const [role, setRole] = useState('')
-  const [result, setResult] = useState('')
-  const [chartData, setChartData] = useState(null)
-  const [insights, setInsights] = useState(null)   // ← live structured data
+  const cache = loadCache()
+  const [role, setRole] = useState(cache?.role ?? '')
+  const [result, setResult] = useState(cache?.result ?? '')
+  const [chartData, setChartData] = useState(cache?.chartData ?? null)
+  const [insights, setInsights] = useState(cache?.insights ?? null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  useEffect(() => {
+    if (result || insights) {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify({ role, result, chartData, insights }))
+    }
+  }, [result, insights, chartData, role])
+
   const handleAnalyze = async () => {
     if (!role.trim() || loading) return
+    sessionStorage.removeItem(SESSION_KEY)
     setLoading(true)
     setError('')
     setResult('')

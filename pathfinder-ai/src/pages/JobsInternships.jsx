@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import api from '../api/client.js'
 
 const LOCATIONS = [
@@ -48,17 +48,30 @@ const DEMO_JOBS = [
   },
 ]
 
+const SESSION_KEY = 'jobsInternships_cache'
+function loadCache() {
+  try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null') } catch { return null }
+}
+
 export default function JobsInternships() {
-  const [searchRole, setSearchRole] = useState('')
-  const [location, setLocation] = useState('India')
-  const [jobTypeFilter, setJobTypeFilter] = useState('All')
-  const [jobs, setJobs] = useState([])
+  const cache = loadCache()
+  const [searchRole, setSearchRole] = useState(cache?.searchRole ?? '')
+  const [location, setLocation] = useState(cache?.location ?? 'India')
+  const [jobTypeFilter, setJobTypeFilter] = useState(cache?.jobTypeFilter ?? 'All')
+  const [jobs, setJobs] = useState(cache?.jobs ?? [])
   const [loading, setLoading] = useState(false)
-  const [searched, setSearched] = useState(false)
+  const [searched, setSearched] = useState(cache?.searched ?? false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (searched) {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify({ searchRole, location, jobTypeFilter, jobs, searched }))
+    }
+  }, [searched, jobs, searchRole, location, jobTypeFilter])
 
   const handleSearch = async () => {
     if (!searchRole.trim() || loading) return
+    sessionStorage.removeItem(SESSION_KEY)
     setLoading(true)
     setError('')
     setJobs([])

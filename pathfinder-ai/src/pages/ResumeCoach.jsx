@@ -1,18 +1,30 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import api from '../api/client.js'
 
+const SESSION_KEY = 'resumeCoach_cache'
+function loadCache() {
+  try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null') } catch { return null }
+}
+
 export default function ResumeCoach() {
+  const cache = loadCache()
   const [file, setFile] = useState(null)
   const [resumeText, setResumeText] = useState('')
-  const [targetRole, setTargetRole] = useState('')
+  const [targetRole, setTargetRole] = useState(cache?.targetRole ?? '')
   const [inputMode, setInputMode] = useState('upload')
-  const [result, setResult] = useState('')
+  const [result, setResult] = useState(cache?.result ?? '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [isDragOver, setIsDragOver] = useState(false)
   const fileInputRef = useRef(null)
+
+  useEffect(() => {
+    if (result) {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify({ targetRole, result }))
+    }
+  }, [result, targetRole])
 
   const handleFile = (f) => {
     if (!f) return
@@ -33,6 +45,7 @@ export default function ResumeCoach() {
     const hasContent = inputMode === 'upload' ? !!file : resumeText.trim()
     if (!hasContent || !targetRole.trim() || loading) return
 
+    sessionStorage.removeItem(SESSION_KEY)
     setLoading(true)
     setError('')
     setResult('')
@@ -57,7 +70,7 @@ export default function ResumeCoach() {
   const canSubmit = targetRole.trim() && (inputMode === 'upload' ? !!file : !!resumeText.trim())
 
   return (
-    <div className="max-w-6xl mx-auto space-y-10">
+    <div className="max-w-5xl mx-auto space-y-10">
       {/* Hero Header */}
       <header>
         <h1 className="font-headline text-4xl md:text-5xl font-extrabold tracking-tight leading-tight mb-4">
@@ -79,8 +92,8 @@ export default function ResumeCoach() {
       </header>
 
       {/* Input Panel */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Left: Input */}
+      <div className="space-y-8">
+        {/* Input */}
         <div className="space-y-5">
           {/* Mode Toggle */}
           <div className="bg-surface-container-low rounded-xl p-1 flex gap-1">
@@ -202,10 +215,11 @@ export default function ResumeCoach() {
           )}
         </div>
 
-        {/* Right: Results */}
-        <div>
+        {/* Results — always mounted to prevent layout flicker */}
+        <div className="bg-surface-container-low rounded-xl">
+          {/* Loading */}
           {loading && (
-            <div className="bg-surface-container-low rounded-xl p-8 space-y-8">
+            <div className="p-8 space-y-8">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-full bg-tertiary/20 flex items-center justify-center ai-pulse">
                   <span
@@ -216,12 +230,8 @@ export default function ResumeCoach() {
                   </span>
                 </div>
                 <div>
-                  <p className="font-headline font-bold text-on-surface">
-                    AI is analyzing your resume…
-                  </p>
-                  <p className="text-on-surface-variant text-xs">
-                    Cross-referencing with 4.2M job descriptions
-                  </p>
+                  <p className="font-headline font-bold text-on-surface">AI is analyzing your resume…</p>
+                  <p className="text-on-surface-variant text-xs">Cross-referencing with 4.2M job descriptions</p>
                 </div>
                 <div className="flex gap-1.5 ml-auto">
                   {[0, 1, 2].map(i => (
@@ -229,25 +239,22 @@ export default function ResumeCoach() {
                       key={i}
                       className="w-2 h-2 rounded-full bg-tertiary animate-bounce"
                       style={{ animationDelay: `${i * 0.15}s` }}
-                    ></div>
+                    />
                   ))}
                 </div>
               </div>
               <div className="space-y-3 animate-pulse">
                 {[90, 70, 85, 60, 78, 88, 65, 75].map((w, i) => (
-                  <div
-                    key={i}
-                    className="h-3 bg-surface-container-highest rounded"
-                    style={{ width: `${w}%` }}
-                  ></div>
+                  <div key={i} className="h-3 bg-surface-container-highest rounded" style={{ width: `${w}%` }} />
                 ))}
               </div>
               <p className="text-center text-on-surface-variant text-xs">This may take 20–40 seconds…</p>
             </div>
           )}
 
+          {/* Result */}
           {!loading && result && (
-            <div className="bg-surface-container-low rounded-xl p-8 max-h-[80vh] overflow-y-auto custom-scrollbar">
+            <div className="p-8">
               <div className="flex items-center gap-2 mb-6 pb-4 border-b border-outline/10">
                 <span className="material-symbols-outlined text-primary">check_circle</span>
                 <span className="font-headline font-bold text-on-surface">Analysis Complete</span>
@@ -255,28 +262,27 @@ export default function ResumeCoach() {
                   Target: {targetRole}
                 </span>
               </div>
-              <div className="prose-pathfinder">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{result}</ReactMarkdown>
+              <div className="overflow-x-auto">
+                <div className="prose-pathfinder min-w-0">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{result}</ReactMarkdown>
+                </div>
               </div>
             </div>
           )}
 
+          {/* Empty state */}
           {!loading && !result && (
-            <div className="bg-surface-container-low rounded-xl p-8 min-h-64 flex flex-col items-center justify-center text-center gap-4">
+            <div className="p-8 min-h-64 flex flex-col items-center justify-center text-center gap-4">
               <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-                <span className="material-symbols-outlined text-primary text-3xl opacity-60">
-                  description
-                </span>
+                <span className="material-symbols-outlined text-primary text-3xl opacity-60">description</span>
               </div>
               <div>
                 <p className="font-headline font-bold text-on-surface mb-1">Ready to analyze</p>
                 <p className="text-on-surface-variant text-sm">
                   Upload your resume and specify your target role,
-                  <br />
-                  then click Analyze Resume.
+                  <br />then click Analyze Resume.
                 </p>
               </div>
-              {/* Static insight previews */}
               <div className="w-full space-y-3 mt-4 opacity-30">
                 {['Quantify Achievements', 'Missing Keywords', 'Visual Hierarchy'].map(t => (
                   <div key={t} className="flex items-center gap-3 p-3 bg-surface-container rounded-lg text-left">

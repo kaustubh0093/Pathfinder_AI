@@ -55,24 +55,42 @@ const DEMO_RESOURCES = [
 ]
 
 
+const SESSION_KEY = 'careerInsights_cache'
+
+function loadCache() {
+  try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null') } catch { return null }
+}
+
 export default function CareerInsights() {
+  const cache = loadCache()
+
   const [careers, setCareers]     = useState({})
-  const [category, setCategory]   = useState('')
-  const [subcareer, setSubcareer] = useState('')
-  const [result, setResult]       = useState('')
-  const [chartData, setChartData] = useState(null)
-  const [insights, setInsights]   = useState(null)
+  const [category, setCategory]   = useState(cache?.category   ?? '')
+  const [subcareer, setSubcareer] = useState(cache?.subcareer  ?? '')
+  const [result, setResult]       = useState(cache?.result     ?? '')
+  const [chartData, setChartData] = useState(cache?.chartData  ?? null)
+  const [insights, setInsights]   = useState(cache?.insights   ?? null)
   const [loading, setLoading]     = useState(false)
   const [error, setError]         = useState('')
+
+  // Persist result state across navigation
+  useEffect(() => {
+    if (result || insights) {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify({ category, subcareer, result, chartData, insights }))
+    }
+  }, [result, insights, chartData, category, subcareer])
 
   useEffect(() => {
     api.get('/careers')
       .then(res => {
         setCareers(res.data)
-        const firstCat = Object.keys(res.data)[0]
-        if (firstCat) {
-          setCategory(firstCat)
-          setSubcareer(res.data[firstCat][0] || '')
+        // Only set defaults if nothing is cached
+        if (!cache?.category) {
+          const firstCat = Object.keys(res.data)[0]
+          if (firstCat) {
+            setCategory(firstCat)
+            setSubcareer(res.data[firstCat][0] || '')
+          }
         }
       })
       .catch(() => {})
@@ -80,6 +98,7 @@ export default function CareerInsights() {
 
   const handleAnalyze = async () => {
     if (!category || !subcareer || loading) return
+    sessionStorage.removeItem(SESSION_KEY)
     setLoading(true)
     setError('')
     setResult('')

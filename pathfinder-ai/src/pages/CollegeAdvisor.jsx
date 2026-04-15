@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import api from '../api/client.js'
@@ -19,16 +19,29 @@ const LOCATIONS = [
 const FEATURED_IMG =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuD-W8N1WsCPdonqIZEwqYdMz9q3ix76dxaN9QMvVPMvquGdi0FWpILhNqeUf2Nf36g_RAajAeOo4tz8gTpfJkaJfsqd9TKhSFc3IEqIxEP-P7uizEjm4kCHhtFqSQjkpa8r-4Hxb_Fi40JukcAqoccemX1Ydrp_fCW3llSYTKxgq004kxUHK6QdIMOnZ9IziAIxM1C_8cXFk9xY_isiCwfXyOraX9Skd6MXbIEgjEYk-We68uBMBUFRXnk-jBBjvkHL3mCpscB1bfY'
 
+const SESSION_KEY = 'collegeAdvisor_cache'
+function loadCache() {
+  try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null') } catch { return null }
+}
+
 export default function CollegeAdvisor() {
-  const [careerPath, setCareerPath] = useState('')
-  const [location, setLocation] = useState('India (All Regions)')
-  const [district, setDistrict] = useState('')
-  const [result, setResult] = useState('')
+  const cache = loadCache()
+  const [careerPath, setCareerPath] = useState(cache?.careerPath ?? '')
+  const [location, setLocation] = useState(cache?.location ?? 'India (All Regions)')
+  const [district, setDistrict] = useState(cache?.district ?? '')
+  const [result, setResult] = useState(cache?.result ?? '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  useEffect(() => {
+    if (result) {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify({ careerPath, location, district, result }))
+    }
+  }, [result, careerPath, location, district])
+
   const handleRecommend = async () => {
     if (!careerPath.trim() || loading) return
+    sessionStorage.removeItem(SESSION_KEY)
     setLoading(true)
     setError('')
     setResult('')

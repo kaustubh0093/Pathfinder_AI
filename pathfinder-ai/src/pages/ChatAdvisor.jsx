@@ -9,12 +9,6 @@ const INITIAL_MESSAGE = {
     "Hello! I'm your **Pathfinder AI** career advisor. I can help you with career guidance, market trends, skill roadmaps, college advice, and more — specifically tailored for the Indian job market. What would you like to know?",
 }
 
-const sessions = [
-  { id: 1, title: 'UX Career Trajectory', time: '2h ago', active: true },
-  { id: 2, title: 'Salary Negotiation Tips', time: 'Yesterday' },
-  { id: 3, title: 'Portfolio Review', time: '3 days ago' },
-  { id: 4, title: 'MBA vs. Bootcamp', time: '1 week ago' },
-]
 
 const suggestions = [
   'How do I become a Data Scientist in India?',
@@ -23,12 +17,26 @@ const suggestions = [
   'Best certifications for Cybersecurity in 2025?',
 ]
 
+const SESSION_KEY = 'chatAdvisor_cache'
+function loadMessages() {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null')
+    return Array.isArray(saved) && saved.length > 0 ? saved : [INITIAL_MESSAGE]
+  } catch { return [INITIAL_MESSAGE] }
+}
+
 export default function ChatAdvisor() {
-  const [messages, setMessages] = useState([INITIAL_MESSAGE])
+  const [messages, setMessages] = useState(loadMessages)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
+
+  useEffect(() => {
+    if (messages.length > 1) {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(messages))
+    }
+  }, [messages])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -67,6 +75,7 @@ export default function ChatAdvisor() {
   }
 
   const clearChat = () => {
+    sessionStorage.removeItem(SESSION_KEY)
     setMessages([{
       role: 'ai',
       content: "Chat cleared! I'm ready to help with your career questions.",
@@ -75,37 +84,6 @@ export default function ChatAdvisor() {
 
   return (
     <div className="max-w-7xl mx-auto flex gap-6 h-[calc(100vh-7rem)]">
-      {/* Session Sidebar */}
-      <aside className="hidden xl:flex flex-col w-72 shrink-0 bg-surface-container-low rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-outline-variant/20">
-          <h3 className="font-headline font-bold text-xs uppercase tracking-widest text-on-surface-variant">
-            Recent Sessions
-          </h3>
-          <button
-            onClick={clearChat}
-            title="New session"
-            className="p-1.5 text-primary hover:bg-surface-container rounded-lg transition-colors cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-base">add</span>
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto custom-scrollbar py-2">
-          {sessions.map(s => (
-            <div
-              key={s.id}
-              className={`px-4 py-3 cursor-pointer transition-all duration-200 ${s.active
-                  ? 'border-l-2 border-primary bg-primary/5'
-                  : 'border-l-2 border-transparent hover:bg-surface-container'
-                }`}
-            >
-              <p className={`text-sm font-semibold truncate ${s.active ? 'text-on-surface' : 'text-on-surface-variant'}`}>
-                {s.title}
-              </p>
-              <p className="text-[11px] text-outline mt-0.5">{s.time}</p>
-            </div>
-          ))}
-        </div>
-      </aside>
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col min-w-0 bg-surface-container-low rounded-xl overflow-hidden">
