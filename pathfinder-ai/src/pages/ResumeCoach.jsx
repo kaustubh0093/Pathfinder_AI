@@ -271,6 +271,7 @@ export default function ResumeCoach() {
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{result}</ReactMarkdown>
                 </div>
               </div>
+
             </div>
           )}
 

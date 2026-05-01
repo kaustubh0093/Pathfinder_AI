@@ -1,0 +1,7 @@
+Defaulting to user installation because normal site-packages is not writeable
+Requirement already satisfied: reportlab in C:\Users\jagta\AppData\Roaming\Python\Python313\site-packages (4.4.9)
+Requirement already satisfied: pillow>=9.0.0 in C:\Users\jagta\AppData\Roaming\Python\Python313\site-packages (from reportlab) (12.1.1)
+Requirement already satisfied: charset-normalizer in C:\Users\jagta\AppData\Roaming\Python\Python313\site-packages (from reportlab) (3.4.4)
+
+[notice] A new release of pip is available: 26.0.1 -> 26.1
+[notice] To update, run: python.exe -m pip install --upgrade pip
