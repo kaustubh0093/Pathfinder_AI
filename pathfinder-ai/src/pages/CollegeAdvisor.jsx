@@ -66,12 +66,12 @@ export default function CollegeAdvisor() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto space-y-12">
+    <div className="max-w-7xl mx-auto space-y-6">
       {/* Hero Header */}
-      <header className="space-y-8">
+      <header className="space-y-5">
 
         {/* Search Controls — full-width row above title */}
-        <div className="bg-surface-container-high rounded-xl px-6 py-5 flex flex-col sm:flex-row items-end gap-4">
+        <div className="bg-surface-container-high rounded-xl px-5 py-4 flex flex-col sm:flex-row items-end gap-3">
           {/* Career Path Input */}
           <div className="flex-1 min-w-0">
             <label className="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold block mb-2">
@@ -145,13 +145,13 @@ export default function CollegeAdvisor() {
 
         {/* Title & description — below the controls */}
         <div>
-          <div className="flex items-center gap-2 mb-4">
+          <div className="flex items-center gap-2 mb-2">
             <span className="bg-tertiary/20 text-tertiary px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-tertiary shadow-[0_0_8px_#26fedc]"></span>
               AI Intelligence Active
             </span>
           </div>
-          <h1 className="font-headline text-5xl font-extrabold text-on-surface tracking-tighter leading-tight mb-4">
+          <h1 className="font-headline text-5xl font-extrabold text-on-surface tracking-tighter leading-tight mb-2">
             Discover Your <span className="text-gradient">Future Campus</span>
           </h1>
           <p className="text-on-surface-variant text-lg max-w-xl font-light">
@@ -186,8 +186,8 @@ export default function CollegeAdvisor() {
 
       {/* Results */}
       {!loading && result && (
-        <div className="bg-surface-container-low rounded-xl p-8 animate-[fadeIn_0.4s_ease]">
-          <div className="flex items-center gap-2 mb-6 pb-4 border-b border-outline/10">
+        <div className="bg-surface-container-low rounded-xl p-5 animate-[fadeIn_0.4s_ease]">
+          <div className="flex items-center gap-2 mb-3 pb-3 border-b border-outline/10">
             <span className="material-symbols-outlined text-primary">school</span>
             <h2 className="font-headline text-xl font-bold">
               College Recommendations for{' '}
@@ -208,7 +208,7 @@ export default function CollegeAdvisor() {
 
       {/* Empty State Bento */}
       {!loading && !result && !error && (
-        <section className="grid grid-cols-1 md:grid-cols-12 gap-6 auto-rows-[240px]">
+        <section className="grid grid-cols-1 md:grid-cols-12 gap-4 auto-rows-[220px]">
           {/* Featured College Demo */}
           <div className="md:col-span-8 md:row-span-2 group relative overflow-hidden rounded-xl bg-surface-container-low">
             <div className="absolute inset-0 bg-gradient-to-t from-[#121416] via-transparent to-transparent z-10 opacity-80"></div>
@@ -217,8 +217,8 @@ export default function CollegeAdvisor() {
               className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
               src={FEATURED_IMG}
             />
-            <div className="absolute bottom-0 left-0 p-8 z-20 w-full">
-              <div className="flex items-center gap-3 mb-3">
+            <div className="absolute bottom-0 left-0 p-5 z-20 w-full">
+              <div className="flex items-center gap-3 mb-2">
                 <span className="bg-primary-container/80 backdrop-blur-md text-on-primary-container text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-tighter">
                   Enter a career goal above
                 </span>
@@ -226,7 +226,7 @@ export default function CollegeAdvisor() {
               <h3 className="text-3xl font-headline font-bold text-white mb-2">
                 AI-Powered College Matching
               </h3>
-              <p className="text-on-surface-variant/90 max-w-lg mb-6 line-clamp-2">
+              <p className="text-on-surface-variant/90 max-w-lg mb-3 line-clamp-2">
                 Tell us your career goal and location preference — our AI will surface the top
                 institutions across India with fees, NIRF rankings, and placement packages.
               </p>

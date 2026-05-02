@@ -135,14 +135,14 @@ export default function CareerInsights() {
     <div className="max-w-6xl mx-auto">
 
       {/* ── Hero Header ─────────────────────────────────────────────────────── */}
-      <header className="mb-12">
-        <div className="flex items-center gap-3 mb-4">
+      <header className="mb-6">
+        <div className="flex items-center gap-3 mb-2">
           <span className="px-3 py-1 bg-tertiary/20 text-tertiary rounded-full text-xs font-bold flex items-center gap-2 shadow-[0_0_12px_rgba(38,254,220,0.2)]">
             <span className="w-1.5 h-1.5 bg-tertiary rounded-full animate-pulse"></span>
             AI ANALYTICS ACTIVE
           </span>
         </div>
-        <h1 className="font-headline text-4xl md:text-5xl font-extrabold tracking-tight text-on-background mb-4">
+        <h1 className="font-headline text-4xl md:text-5xl font-extrabold tracking-tight text-on-background mb-2">
           Career{' '}
           <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-tertiary">
             Insights
@@ -154,10 +154,10 @@ export default function CareerInsights() {
       </header>
 
       {/* ── Career Selector ──────────────────────────────────────────────────── */}
-      <section className="mb-10">
+      <section className="mb-5">
         <div className="relative group">
           <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 to-tertiary/20 rounded-2xl blur opacity-75 group-focus-within:opacity-100 transition duration-500"></div>
-          <div className="relative bg-surface-container-high rounded-xl px-6 py-5 shadow-2xl flex flex-col sm:flex-row items-stretch sm:items-end gap-4">
+          <div className="relative bg-surface-container-high rounded-xl px-5 py-4 shadow-2xl flex flex-col sm:flex-row items-stretch sm:items-end gap-3">
             <div className="flex-1">
               <label className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2 block">
                 Industry
@@ -212,7 +212,7 @@ export default function CareerInsights() {
 
       {/* ── Error ────────────────────────────────────────────────────────────── */}
       {error && (
-        <div className="mb-8 px-5 py-4 rounded-xl bg-error/10 border border-error/20 text-error text-sm">
+        <div className="mb-4 px-4 py-3 rounded-xl bg-error/10 border border-error/20 text-error text-sm">
           {error}
         </div>
       )}
@@ -235,7 +235,7 @@ export default function CareerInsights() {
 
       {/* ── Bento Grid (demo + live) ─────────────────────────────────────────── */}
       {!loading && (
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
 
           {/* ① Roadmap Stage Cards — full width, 3 across */}
           {roadmap.map((step, i) => {
@@ -243,17 +243,17 @@ export default function CareerInsights() {
             return (
               <div
                 key={step.stage}
-                className={`md:col-span-4 bg-surface-container-low rounded-xl p-6 border ${accent.border} relative overflow-hidden
+                className={`md:col-span-4 bg-surface-container-low rounded-xl p-4 border ${accent.border} relative overflow-hidden
                             hover:translate-y-[-4px] transition-transform duration-300
                             ${!isLive ? 'opacity-30 pointer-events-none' : ''}`}
                 style={{ transitionDelay: `${i * 60}ms` }}
               >
                 {/* glow blob */}
                 <div className="absolute -top-8 -right-8 w-28 h-28 bg-primary/5 rounded-full blur-2xl pointer-events-none"></div>
-                <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-xs font-black mb-4 ${accent.num}`}>
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black mb-2 ${accent.num}`}>
                   0{i + 1}
                 </div>
-                <div className="flex items-center gap-2 mb-3">
+                <div className="flex items-center gap-2 mb-1.5">
                   <span className={`material-symbols-outlined text-xl ${accent.icon}`}>{step.icon}</span>
                   <h3 className="font-headline font-bold text-base text-on-background">{step.stage}</h3>
                 </div>
@@ -263,9 +263,9 @@ export default function CareerInsights() {
           })}
 
           {/* ② Critical Skills — col-span-8 */}
-          <section className="md:col-span-8 bg-surface-container-low rounded-xl p-8 relative overflow-hidden">
+          <section className="md:col-span-8 bg-surface-container-low rounded-xl p-5 relative overflow-hidden">
             <div className="absolute top-0 right-0 w-56 h-56 bg-primary/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
-            <div className="flex justify-between items-start mb-8 relative z-10">
+            <div className="flex justify-between items-start mb-4 relative z-10">
               <div>
                 <h2 className="font-headline text-2xl font-bold text-primary mb-1">Critical Skills</h2>
                 <p className="text-on-surface-variant text-sm">
@@ -278,7 +278,7 @@ export default function CareerInsights() {
                 </span>
               )}
             </div>
-            <div className={`space-y-5 relative z-10 ${!isLive ? 'opacity-30' : ''}`}>
+            <div className={`space-y-3 relative z-10 ${!isLive ? 'opacity-30' : ''}`}>
               {skills.map((skill, i) => {
                 const col = SKILL_COLORS[i % SKILL_COLORS.length]
                 return (
@@ -300,9 +300,9 @@ export default function CareerInsights() {
           </section>
 
           {/* ③ Radar Chart — col-span-4 */}
-          <section className="md:col-span-4 bg-surface-container rounded-xl p-8 flex flex-col">
+          <section className="md:col-span-4 bg-surface-container rounded-xl p-5 flex flex-col">
             <h2 className="font-headline text-xl font-bold mb-1">Skill Profile</h2>
-            <p className="text-on-surface-variant text-sm mb-6">
+            <p className="text-on-surface-variant text-sm mb-3">
               {isLive
                 ? <span>Importance weights for <span className="text-on-surface font-medium">{subcareer}</span></span>
                 : 'Radar chart appears after analysis'}
@@ -322,8 +322,8 @@ export default function CareerInsights() {
           </section>
 
           {/* ④ Career Ladder Cards — full width */}
-          <section className="md:col-span-12 bg-surface-container-low rounded-xl p-8">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+          <section className="md:col-span-12 bg-surface-container-low rounded-xl p-5">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
               <div>
                 <h2 className="font-headline text-2xl font-bold mb-1">Career Ladder</h2>
                 <p className="text-on-surface-variant text-sm">
@@ -336,7 +336,7 @@ export default function CareerInsights() {
                 </span>
               )}
             </div>
-            <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 ${!isLive ? 'opacity-30' : ''}`}>
+            <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 ${!isLive ? 'opacity-30' : ''}`}>
               {ladder.map((rung, i) => {
                 const badgeStyle = BADGE_STYLES[rung.badge] ?? BADGE_STYLES.Entry
                 const icons = ['person', 'trending_up', 'workspace_premium', 'architecture']
@@ -345,7 +345,7 @@ export default function CareerInsights() {
                 return (
                   <div
                     key={rung.role}
-                    className="bg-surface-container-high rounded-xl p-6 hover:translate-y-[-4px] transition-transform duration-300 flex flex-col gap-4"
+                    className="bg-surface-container-high rounded-xl p-4 hover:translate-y-[-4px] transition-transform duration-300 flex flex-col gap-3"
                     style={{ transitionDelay: `${i * 60}ms` }}
                   >
                     <div className="flex items-start justify-between">
@@ -380,9 +380,9 @@ export default function CareerInsights() {
 
           {/* ⑤ Full markdown report — col-span-8 */}
           {result && (
-            <section className="md:col-span-8 bg-surface-container-low rounded-xl p-8 relative overflow-hidden">
+            <section className="md:col-span-8 bg-surface-container-low rounded-xl p-5 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
-              <div className="flex items-center gap-2 mb-6 pb-4 border-b border-outline/10 relative z-10">
+              <div className="flex items-center gap-2 mb-3 pb-3 border-b border-outline/10 relative z-10">
                 <span className="material-symbols-outlined text-primary">description</span>
                 <h2 className="font-headline text-xl font-bold">
                   Full Report — <span className="text-primary">{subcareer}</span>
@@ -396,12 +396,12 @@ export default function CareerInsights() {
 
           {/* ⑥ Resources + Outlook — col-span-4 */}
           {(result || isLive) && (
-            <div className="md:col-span-4 flex flex-col gap-6">
+            <div className="md:col-span-4 flex flex-col gap-4">
 
               {/* Outlook card */}
               {outlook && (
-                <div className="bg-gradient-to-br from-surface-container-low to-surface-container rounded-xl p-6 border border-tertiary/10">
-                  <div className="flex items-center gap-2 mb-3">
+                <div className="bg-gradient-to-br from-surface-container-low to-surface-container rounded-xl p-4 border border-tertiary/10">
+                  <div className="flex items-center gap-2 mb-2">
                     <span className="material-symbols-outlined text-tertiary text-xl">bolt</span>
                     <span className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Outlook</span>
                   </div>
@@ -410,9 +410,9 @@ export default function CareerInsights() {
               )}
 
               {/* Resources cards */}
-              <div className={`bg-surface-container rounded-xl p-6 flex flex-col gap-1 ${!isLive ? 'opacity-30' : ''}`}>
-                <h3 className="font-headline font-bold text-lg mb-4">Top Resources</h3>
-                <div className="space-y-3">
+              <div className={`bg-surface-container rounded-xl p-4 flex flex-col gap-1 ${!isLive ? 'opacity-30' : ''}`}>
+                <h3 className="font-headline font-bold text-lg mb-2">Top Resources</h3>
+                <div className="space-y-2">
                   {resources.map((res, i) => (
                     <div
                       key={i}

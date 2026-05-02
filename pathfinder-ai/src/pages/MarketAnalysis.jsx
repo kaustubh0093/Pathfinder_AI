@@ -76,8 +76,8 @@ export default function MarketAnalysis() {
   return (
     <div className="max-w-6xl mx-auto">
       {/* Hero Header */}
-      <header className="mb-12">
-        <h1 className="font-headline text-4xl md:text-5xl font-extrabold tracking-tight text-on-background mb-4">
+      <header className="mb-6">
+        <h1 className="font-headline text-4xl md:text-5xl font-extrabold tracking-tight text-on-background mb-2">
           Real-Time <span className="text-primary">Market Pulse</span>
         </h1>
         <p className="text-on-surface-variant text-lg max-w-2xl leading-relaxed">
@@ -87,10 +87,10 @@ export default function MarketAnalysis() {
       </header>
 
       {/* Search Section */}
-      <section className="mb-10">
+      <section className="mb-5">
         <div className="relative group">
           <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 to-tertiary/20 rounded-2xl blur opacity-75 group-focus-within:opacity-100 transition duration-500"></div>
-          <div className="relative flex items-center bg-surface-container-high rounded-xl px-6 py-4 shadow-2xl gap-4">
+          <div className="relative flex items-center bg-surface-container-high rounded-xl px-5 py-3 shadow-2xl gap-4">
             <span className="material-symbols-outlined text-primary text-3xl shrink-0">search</span>
             <input
               className="flex-1 bg-transparent border-none text-on-surface placeholder:text-outline focus:ring-0 text-xl font-medium outline-none"
@@ -120,7 +120,7 @@ export default function MarketAnalysis() {
 
       {/* Error */}
       {error && (
-        <div className="mb-8 px-5 py-4 rounded-xl bg-error/10 border border-error/20 text-error text-sm">
+        <div className="mb-4 px-4 py-3 rounded-xl bg-error/10 border border-error/20 text-error text-sm">
           {error}
         </div>
       )}
@@ -143,10 +143,10 @@ export default function MarketAnalysis() {
 
       {/* ── BENTO GRID (demo or live) ─────────────────────────────────────── */}
       {!loading && (
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
 
           {/* ① Employment Trajectory */}
-          <div className="md:col-span-8 bg-surface-container-low rounded-xl p-8 relative overflow-hidden group">
+          <div className="md:col-span-8 bg-surface-container-low rounded-xl p-5 relative overflow-hidden group">
             <div className="absolute top-0 right-0 p-4">
               <span className={`px-3 py-1 rounded-full text-xs font-bold tracking-widest flex items-center gap-2 ${
                 isLive ? 'bg-tertiary/10 text-tertiary' : 'bg-outline/10 text-outline'
@@ -155,7 +155,7 @@ export default function MarketAnalysis() {
                 {isLive ? 'LIVE' : 'DEMO'}
               </span>
             </div>
-            <h3 className="font-headline text-2xl font-bold mb-6">Employment Trajectory</h3>
+            <h3 className="font-headline text-2xl font-bold mb-3">Employment Trajectory</h3>
             <div className="h-52 flex items-end gap-2 px-2">
               {isLive ? trajectory.map((h, i) => {
                 const isLast = i === trajectory.length - 1
@@ -184,7 +184,7 @@ export default function MarketAnalysis() {
                 <span key={l} className="flex-1 text-center">{l}</span>
               ))}
             </div>
-            <div className="mt-6 flex justify-between items-center border-t border-outline/10 pt-5">
+            <div className="mt-3 flex justify-between items-center border-t border-outline/10 pt-3">
               <div>
                 <p className="text-xs text-outline uppercase tracking-wider font-bold">Projected Growth</p>
                 <p className="text-2xl font-black text-tertiary">
@@ -202,15 +202,15 @@ export default function MarketAnalysis() {
           </div>
 
           {/* ② Salary Benchmarks */}
-          <div className="md:col-span-4 bg-surface-container rounded-xl p-8 flex flex-col justify-between">
+          <div className="md:col-span-4 bg-surface-container rounded-xl p-5 flex flex-col justify-between">
             <div>
-              <span className="material-symbols-outlined text-primary text-4xl mb-4">payments</span>
-              <h3 className="font-headline text-xl font-bold mb-2">Salary Benchmarks</h3>
-              <p className="text-on-surface-variant text-sm mb-6">
+              <span className="material-symbols-outlined text-primary text-4xl mb-2">payments</span>
+              <h3 className="font-headline text-xl font-bold mb-1">Salary Benchmarks</h3>
+              <p className="text-on-surface-variant text-sm mb-3">
                 {isLive ? `Based on live data — ${role}` : 'Search a role to see real salary data.'}
               </p>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div className={`p-4 rounded-lg transition-all ${isLive ? 'bg-surface-container-lowest' : 'bg-surface-container-lowest opacity-40'}`}>
                 <p className="text-xs text-outline font-bold uppercase tracking-widest mb-1">Top 10%</p>
                 <p className="text-xl font-bold text-on-background">
@@ -239,8 +239,8 @@ export default function MarketAnalysis() {
           </div>
 
           {/* ③ Skill Demand Heatmap */}
-          <div className="md:col-span-6 bg-surface-container-low rounded-xl p-8">
-            <h3 className="font-headline text-xl font-bold mb-6">High-Demand Skill Clusters</h3>
+          <div className="md:col-span-6 bg-surface-container-low rounded-xl p-5">
+            <h3 className="font-headline text-xl font-bold mb-3">High-Demand Skill Clusters</h3>
             {isLive && skills.length > 0 ? (
               <div className="flex flex-wrap gap-3">
                 {skills.map((skill, i) => (
@@ -266,12 +266,12 @@ export default function MarketAnalysis() {
             )}
             {/* Salary bar chart */}
             {chartData && (
-              <div className="mt-8 h-44">
+              <div className="mt-4 h-44">
                 <Bar data={buildBarDataset(chartData)} options={{ ...barOptions, maintainAspectRatio: false }} />
               </div>
             )}
             {!chartData && !isLive && (
-              <div className="mt-8 w-full h-44 bg-surface-container rounded-lg flex items-center justify-center text-on-surface-variant text-sm opacity-30">
+              <div className="mt-4 w-full h-44 bg-surface-container rounded-lg flex items-center justify-center text-on-surface-variant text-sm opacity-30">
                 <span className="material-symbols-outlined text-primary mr-2">hub</span>
                 Skill Heatmap Visualization
               </div>
@@ -279,7 +279,7 @@ export default function MarketAnalysis() {
           </div>
 
           {/* ④ Location Saturation */}
-          <div className="md:col-span-6 bg-surface-container-low rounded-xl p-8 grid grid-cols-2 gap-6">
+          <div className="md:col-span-6 bg-surface-container-low rounded-xl p-5 grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <h3 className="font-headline text-xl font-bold mb-1">Location Saturation</h3>
               <p className="text-on-surface-variant text-sm">
@@ -288,7 +288,7 @@ export default function MarketAnalysis() {
             </div>
 
             {/* Location bars */}
-            <div className="space-y-4">
+            <div className="space-y-3">
               {isLive && locations.length > 0 ? (
                 locations.slice(0, 3).map((loc, i) => (
                   <div key={loc.city}>
@@ -337,8 +337,8 @@ export default function MarketAnalysis() {
 
       {/* Full Markdown Report (below bento) */}
       {!loading && result && (
-        <div className="mt-8 bg-surface-container-low rounded-xl p-8">
-          <div className="flex items-center gap-2 mb-6 pb-4 border-b border-outline/10">
+        <div className="mt-4 bg-surface-container-low rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-3 pb-3 border-b border-outline/10">
             <span className="material-symbols-outlined text-primary">analytics</span>
             <h2 className="font-headline text-xl font-bold">
               Full Market Report — <span className="text-primary">{role}</span>

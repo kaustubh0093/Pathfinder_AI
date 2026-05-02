@@ -13,8 +13,8 @@ export default function Layout() {
       <Sidebar />
 
       <main
-        className={`lg:ml-64 pt-24 bg-mesh min-h-screen ${
-          isChatPage ? 'px-4 md:px-6 pb-0 overflow-hidden' : 'px-6 md:px-12 pb-24'
+        className={`lg:ml-64 pt-20 bg-mesh min-h-screen ${
+          isChatPage ? 'px-3 md:px-5 pb-0 overflow-hidden' : 'px-4 md:px-8 pb-16'
         }`}
       >
         <Outlet />

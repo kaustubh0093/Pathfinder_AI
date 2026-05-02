@@ -99,16 +99,16 @@ export default function JobsInternships() {
   const showDemo = !loading && !searched && !error
 
   return (
-    <div className="max-w-7xl mx-auto space-y-10">
+    <div className="max-w-7xl mx-auto space-y-6">
       {/* Hero Header */}
       <header>
-        <div className="flex items-center gap-2 mb-5">
+        <div className="flex items-center gap-2 mb-3">
           <span className="bg-tertiary/10 text-tertiary px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-tertiary shadow-[0_0_8px_#26fedc] animate-pulse"></span>
             AI Matching Active
           </span>
         </div>
-        <h1 className="font-headline text-4xl md:text-5xl font-extrabold tracking-tight leading-tight mb-4">
+        <h1 className="font-headline text-4xl md:text-5xl font-extrabold tracking-tight leading-tight mb-2">
           Discover your next <span className="text-primary">milestone</span>
         </h1>
         <p className="text-on-surface-variant text-lg max-w-2xl">
@@ -117,7 +117,7 @@ export default function JobsInternships() {
       </header>
 
       {/* Search / Filter Panel */}
-      <section className="bg-surface-container-low rounded-xl p-6 space-y-5">
+      <section className="bg-surface-container-low rounded-xl p-5 space-y-4">
         <p className="text-on-surface-variant text-sm font-medium">Search for live job openings</p>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -235,7 +235,7 @@ export default function JobsInternships() {
       {/* Live Results */}
       {!loading && searched && jobs.length > 0 && (
         <div>
-          <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center justify-between mb-3">
             <p className="text-on-surface-variant text-sm">
               Found{' '}
               <span className="text-on-surface font-semibold">{jobs.length}</span> listings for{' '}
@@ -244,7 +244,7 @@ export default function JobsInternships() {
               <span className="text-on-surface-variant">{location}</span>
             </p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
             {jobs.map((job, i) => (
               <div
                 key={i}
@@ -310,7 +310,7 @@ export default function JobsInternships() {
 
       {/* No Results */}
       {!loading && searched && jobs.length === 0 && (
-        <div className="text-center py-20">
+        <div className="text-center py-12">
           <span className="material-symbols-outlined text-5xl text-on-surface-variant opacity-30 mb-4">
             search_off
           </span>
@@ -324,11 +324,11 @@ export default function JobsInternships() {
       {/* Demo State — shown before first search */}
       {showDemo && (
         <div>
-          <p className="text-on-surface-variant text-sm mb-5 flex items-center gap-2">
+          <p className="text-on-surface-variant text-sm mb-3 flex items-center gap-2">
             <span className="material-symbols-outlined text-sm text-outline">info</span>
             Sample listings — search above for live results
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
             {DEMO_JOBS.map((job, i) => (
               <div
                 key={i}
@@ -360,12 +360,12 @@ export default function JobsInternships() {
             ))}
 
             {/* CTA Card */}
-            <div className="bg-surface-container rounded-xl p-8 flex flex-col justify-center items-center text-center border border-dashed border-outline/20 hover:border-primary/30 transition-all duration-300">
-              <span className="material-symbols-outlined text-primary text-4xl mb-4">travel_explore</span>
-              <h4 className="font-headline font-bold text-on-surface mb-2">
+            <div className="bg-surface-container rounded-xl p-5 flex flex-col justify-center items-center text-center border border-dashed border-outline/20 hover:border-primary/30 transition-all duration-300">
+              <span className="material-symbols-outlined text-primary text-4xl mb-2">travel_explore</span>
+              <h4 className="font-headline font-bold text-on-surface mb-1">
                 Can't find the perfect role?
               </h4>
-              <p className="text-on-surface-variant text-sm mb-6">
+              <p className="text-on-surface-variant text-sm mb-3">
                 Let our AI optimize your resume and surface hidden opportunities.
               </p>
               <a

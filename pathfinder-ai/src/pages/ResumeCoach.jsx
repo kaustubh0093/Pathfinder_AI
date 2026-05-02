@@ -74,10 +74,10 @@ export default function ResumeCoach() {
   const canSubmit = targetRole.trim() && (inputMode === 'upload' ? !!file : !!resumeText.trim())
 
   return (
-    <div className="max-w-5xl mx-auto space-y-10">
+    <div className="max-w-5xl mx-auto space-y-6">
       {/* Hero Header */}
       <header>
-        <h1 className="font-headline text-4xl md:text-5xl font-extrabold tracking-tight leading-tight mb-4">
+        <h1 className="font-headline text-4xl md:text-5xl font-extrabold tracking-tight leading-tight mb-2">
           <span
             style={{
               background: 'linear-gradient(135deg, #5cd7e5 0%, #00dfc1 100%)',
@@ -96,9 +96,9 @@ export default function ResumeCoach() {
       </header>
 
       {/* Input Panel */}
-      <div className="space-y-8">
+      <div className="space-y-5">
         {/* Input */}
-        <div className="space-y-5">
+        <div className="space-y-4">
           {/* Mode Toggle */}
           <div className="bg-surface-container-low rounded-xl p-1 flex gap-1">
             {['upload', 'paste'].map(mode => (
@@ -153,13 +153,13 @@ export default function ResumeCoach() {
                   onDragOver={e => { e.preventDefault(); setIsDragOver(true) }}
                   onDragLeave={() => setIsDragOver(false)}
                   onDrop={handleDrop}
-                  className={`border-2 border-dashed rounded-xl p-10 flex flex-col items-center text-center cursor-pointer transition-all duration-200 ${
+                  className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center text-center cursor-pointer transition-all duration-200 ${
                     isDragOver
                       ? 'border-primary/60 bg-primary/5'
                       : 'border-outline/30 hover:border-primary/40 hover:bg-primary/5'
                   }`}
                 >
-                  <div className={`w-14 h-14 rounded-full flex items-center justify-center mb-4 ${isDragOver ? 'bg-primary/20' : 'bg-surface-container'}`}>
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-2 ${isDragOver ? 'bg-primary/20' : 'bg-surface-container'}`}>
                     <span className={`material-symbols-outlined text-3xl ${isDragOver ? 'text-primary' : 'text-on-surface-variant'}`}>
                       cloud_upload
                     </span>
@@ -223,7 +223,7 @@ export default function ResumeCoach() {
         <div className="bg-surface-container-low rounded-xl">
           {/* Loading */}
           {loading && (
-            <div className="p-8 space-y-8">
+            <div className="p-5 space-y-5">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-full bg-tertiary/20 flex items-center justify-center ai-pulse">
                   <span
@@ -258,8 +258,8 @@ export default function ResumeCoach() {
 
           {/* Result */}
           {!loading && result && (
-            <div className="p-8">
-              <div className="flex items-center gap-2 mb-6 pb-4 border-b border-outline/10">
+            <div className="p-5">
+              <div className="flex items-center gap-2 mb-3 pb-3 border-b border-outline/10">
                 <span className="material-symbols-outlined text-primary">check_circle</span>
                 <span className="font-headline font-bold text-on-surface">Analysis Complete</span>
                 <span className="ml-auto text-[10px] text-on-surface-variant uppercase tracking-wider">
@@ -277,7 +277,7 @@ export default function ResumeCoach() {
 
           {/* Empty state */}
           {!loading && !result && (
-            <div className="p-8 min-h-64 flex flex-col items-center justify-center text-center gap-4">
+            <div className="p-5 min-h-48 flex flex-col items-center justify-center text-center gap-3">
               <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
                 <span className="material-symbols-outlined text-primary text-3xl opacity-60">description</span>
               </div>
