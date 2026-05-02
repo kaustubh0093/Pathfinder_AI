@@ -378,9 +378,46 @@ export default function CareerInsights() {
             </div>
           </section>
 
-          {/* ⑤ Full markdown report — col-span-8 */}
+          {/* ⑤ Outlook banner — full width */}
+          {outlook && (
+            <div className="md:col-span-12 bg-gradient-to-br from-surface-container-low to-surface-container rounded-xl p-4 border border-tertiary/10 flex items-start gap-3">
+              <span className="material-symbols-outlined text-tertiary text-2xl shrink-0">bolt</span>
+              <div className="flex-1">
+                <span className="text-xs font-bold text-on-surface-variant uppercase tracking-widest block mb-1">Outlook</span>
+                <p className="text-on-surface-variant text-sm leading-relaxed">{outlook}</p>
+              </div>
+            </div>
+          )}
+
+          {/* ⑥ Resources — full width, horizontal cards */}
+          {(result || isLive) && (
+            <div className={`md:col-span-12 bg-surface-container rounded-xl p-4 ${!isLive ? 'opacity-30' : ''}`}>
+              <h3 className="font-headline font-bold text-lg mb-3">Top Resources</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {resources.map((res, i) => (
+                  <div
+                    key={i}
+                    className="flex items-start gap-3 p-3 bg-surface-container-lowest rounded-lg hover:bg-surface-container-high transition-colors duration-200"
+                  >
+                    <div className={`w-8 h-8 rounded-md flex items-center justify-center shrink-0 ${
+                      i === 0 ? 'bg-primary/10' : i === 1 ? 'bg-tertiary/10' : 'bg-secondary/10'
+                    }`}>
+                      <span className={`material-symbols-outlined text-base ${
+                        i === 0 ? 'text-primary' : i === 1 ? 'text-tertiary' : 'text-secondary'
+                      }`}>
+                        {i === 0 ? 'play_circle' : i === 1 ? 'verified' : 'menu_book'}
+                      </span>
+                    </div>
+                    <p className="text-sm text-on-surface-variant leading-snug">{res}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ⑦ Full markdown report — full width */}
           {result && (
-            <section className="md:col-span-8 bg-surface-container-low rounded-xl p-5 relative overflow-hidden">
+            <section className="md:col-span-12 bg-surface-container-low rounded-xl p-5 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
               <div className="flex items-center gap-2 mb-3 pb-3 border-b border-outline/10 relative z-10">
                 <span className="material-symbols-outlined text-primary">description</span>
@@ -392,47 +429,6 @@ export default function CareerInsights() {
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{result}</ReactMarkdown>
               </div>
             </section>
-          )}
-
-          {/* ⑥ Resources + Outlook — col-span-4 */}
-          {(result || isLive) && (
-            <div className="md:col-span-4 flex flex-col gap-4">
-
-              {/* Outlook card */}
-              {outlook && (
-                <div className="bg-gradient-to-br from-surface-container-low to-surface-container rounded-xl p-4 border border-tertiary/10">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="material-symbols-outlined text-tertiary text-xl">bolt</span>
-                    <span className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Outlook</span>
-                  </div>
-                  <p className="text-on-surface-variant text-sm leading-relaxed">{outlook}</p>
-                </div>
-              )}
-
-              {/* Resources cards */}
-              <div className={`bg-surface-container rounded-xl p-4 flex flex-col gap-1 ${!isLive ? 'opacity-30' : ''}`}>
-                <h3 className="font-headline font-bold text-lg mb-2">Top Resources</h3>
-                <div className="space-y-2">
-                  {resources.map((res, i) => (
-                    <div
-                      key={i}
-                      className="flex items-start gap-3 p-3 bg-surface-container-lowest rounded-lg hover:bg-surface-container-high transition-colors duration-200"
-                    >
-                      <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 mt-0.5 ${
-                        i === 0 ? 'bg-primary/10' : i === 1 ? 'bg-tertiary/10' : 'bg-secondary/10'
-                      }`}>
-                        <span className={`material-symbols-outlined text-sm ${
-                          i === 0 ? 'text-primary' : i === 1 ? 'text-tertiary' : 'text-secondary'
-                        }`}>
-                          {i === 0 ? 'play_circle' : i === 1 ? 'verified' : 'menu_book'}
-                        </span>
-                      </div>
-                      <p className="text-sm text-on-surface-variant leading-snug">{res}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
           )}
 
         </div>
