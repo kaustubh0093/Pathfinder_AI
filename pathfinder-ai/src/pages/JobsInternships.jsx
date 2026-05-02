@@ -99,7 +99,7 @@ export default function JobsInternships() {
   const showDemo = !loading && !searched && !error
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
+    <div className="w-full space-y-6">
       {/* Hero Header */}
       <header>
         <div className="flex items-center gap-2 mb-3">

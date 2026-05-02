@@ -74,7 +74,7 @@ export default function ResumeCoach() {
   const canSubmit = targetRole.trim() && (inputMode === 'upload' ? !!file : !!resumeText.trim())
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="w-full space-y-6">
       {/* Hero Header */}
       <header>
         <h1 className="font-headline text-4xl md:text-5xl font-extrabold tracking-tight leading-tight mb-2">

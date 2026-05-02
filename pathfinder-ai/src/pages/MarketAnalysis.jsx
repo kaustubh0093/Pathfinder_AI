@@ -74,7 +74,7 @@ export default function MarketAnalysis() {
   const isLive = !!insights
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="w-full">
       {/* Hero Header */}
       <header className="mb-6">
         <h1 className="font-headline text-4xl md:text-5xl font-extrabold tracking-tight text-on-background mb-2">

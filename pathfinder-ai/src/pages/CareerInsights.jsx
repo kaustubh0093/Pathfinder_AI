@@ -132,7 +132,7 @@ export default function CareerInsights() {
   const outlook   = insights?.outlook       ?? null
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="w-full">
 
       {/* ── Hero Header ─────────────────────────────────────────────────────── */}
       <header className="mb-6">

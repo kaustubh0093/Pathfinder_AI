@@ -83,7 +83,7 @@ export default function ChatAdvisor() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto flex gap-6 h-[calc(100vh-7rem)]">
+    <div className="w-full flex gap-6 h-[calc(100vh-6rem)]">
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col min-w-0 bg-surface-container-low rounded-xl overflow-hidden">
@@ -150,7 +150,7 @@ export default function ChatAdvisor() {
               </div>
 
               {/* Bubble */}
-              <div className={`max-w-xl ${msg.role === 'user' ? 'items-end' : 'items-start'} flex flex-col`}>
+              <div className={`max-w-[80%] md:max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start'} flex flex-col`}>
                 <div className={`rounded-2xl px-5 py-4 ${msg.role === 'user'
                   ? 'bg-surface-container-high rounded-tr-none'
                   : 'bg-surface-container rounded-tl-none'
