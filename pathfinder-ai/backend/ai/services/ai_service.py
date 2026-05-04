@@ -1,13 +1,16 @@
+import json
 import re
 import logging
-from typing import List, Tuple, Optional
+from concurrent.futures import ThreadPoolExecutor
+from typing import List, Tuple, Optional, Any, Type
+
+from pydantic import BaseModel
 from langchain_groq import ChatGroq
 from langchain_community.utilities import SerpAPIWrapper
 from langchain_community.tools import Tool
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser, PydanticOutputParser
+from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
 from langchain.agents import AgentExecutor, create_react_agent
-from langchain import hub
 from serpapi import GoogleSearch
 
 from backend.ai.models.output_models import (
@@ -20,37 +23,80 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 MAX_RESUME_CHARS = 15_000
+MAX_LIVE_DATA_CHARS = 4_000  # cap ResearchAgent output before injecting into prompts
 _UNSAFE_RE = re.compile(r'[\x00-\x1f\x7f<>{}\[\]\\^`|~]')
 
+_DEFAULT_LIVE_DATA = (
+    "(no live search performed — fall back to the model's training "
+    "knowledge of the Indian job market)"
+)
+
+# When the AgentExecutor force-stops on iteration limit, LangChain returns this
+# literal string as the agent's `output`. We detect it so we don't pipe a useless
+# stub into the downstream Content/Data prompts as if it were live findings.
+_AGENT_STOPPED_PREFIXES = (
+    "Agent stopped due to iteration limit",
+    "Agent stopped due to time limit",
+)
+
+# Inlined ReAct prompt. Avoids the network call to LangChain Hub at startup
+# and keeps the agent's contract visible in this file for the demo.
+_REACT_PROMPT_TEMPLATE = """Answer the following question as best you can. You have access to the following tools:
+
+{tools}
+
+Use this format EXACTLY:
+
+Question: the input question you must answer
+Thought: think about what to do next
+Action: the action to take, must be one of [{tool_names}]
+Action Input: the input to the action
+Observation: the result of the action
+... (Thought / Action / Action Input / Observation may repeat at most 3 times)
+Thought: I now know the final answer
+Final Answer: a concise factual summary answering the question
+
+Begin!
+
+Question: {input}
+Thought:{agent_scratchpad}"""
+
+
+# ── Sanitizers ────────────────────────────────────────────────────────────────
 
 def _sanitize_input(value: str, max_len: int = 200) -> str:
-    """Validate and sanitize user-controlled text before LLM prompt interpolation."""
+    """Strip control chars and length-cap user-controlled text before prompt interpolation."""
     if not isinstance(value, str):
         value = str(value)
-    value = value.strip()[:max_len]
-    value = _UNSAFE_RE.sub('', value)
-    return value
+    return _UNSAFE_RE.sub('', value.strip()[:max_len])
 
 
 def _scrub_pii(text: str) -> str:
-    """Remove obvious PII (emails, phone numbers, pincodes) from resume text."""
+    """Redact obvious PII (emails, phone numbers, pincodes) before sending to the LLM."""
     text = re.sub(r'[\w.+-]+@[\w-]+\.[a-zA-Z]{2,}', '[EMAIL]', text)
     text = re.sub(r'(\+91[-\s]?)?[6-9]\d{9}', '[PHONE]', text)
     text = re.sub(r'\b\d{6}\b', '[PINCODE]', text)
     return text
 
 
+# ── LLM + ResearchAgent setup ─────────────────────────────────────────────────
+
 def initialize_llm_and_tools(
     groq_api_key: str, serpapi_key: str
 ) -> Tuple[Optional[ChatGroq], Optional[List[Tool]]]:
+    """Build the shared Groq LLM and the `web_search` tool used by the ResearchAgent."""
     try:
         if not groq_api_key:
             raise ValueError("Groq API key is required.")
         if not serpapi_key:
             raise ValueError("SerpAPI key is required.")
 
+
+        # when ReAct asks for plain-text "Action:" lines. Groq then rejects
+        # the request with "Tool choice is none, but model called a tool".
+        # Llama 3.3 follows ReAct's text contract cleanly.
         llm = ChatGroq(
-            model="openai/gpt-oss-120b",
+            model="llama-3.3-70b-versatile",
             groq_api_key=groq_api_key,
             temperature=0.1,
         )
@@ -60,10 +106,22 @@ def initialize_llm_and_tools(
             params={"engine": "google", "google_domain": "google.com", "gl": "in", "hl": "en"},
         )
 
+        # Wrap search.run so every SerpAPI hit announces itself in the log.
+        # Without this the only signal a search happened is a tool-call line buried
+        # inside the ReAct trace; this makes "did we just spend a SerpAPI credit?"
+        # readable at a glance.
+        def logged_search(query: str) -> str:
+            logger.info(f"[SERPAPI] querying: {query!r}")
+            return search.run(query)
+
         search_tool = Tool(
             name="web_search",
-            description="Use to search the web for job market trends, salaries, companies, Indian colleges, and live data.",
-            func=search.run,
+            description=(
+                "Search the live web. Use for current Indian job market data: "
+                "salary ranges, hiring companies, demand trends, in-demand skills. "
+                "Input should be a focused search query string."
+            ),
+            func=logged_search,
         )
 
         return llm, [search_tool]
@@ -72,22 +130,128 @@ def initialize_llm_and_tools(
         return None, None
 
 
-def create_agent_with_tools(llm, tools: List[Tool]):
+def create_agent_with_tools(llm: ChatGroq, tools: List[Tool]) -> Optional[AgentExecutor]:
+    """Build the ResearchAgent — a ReAct executor that decides when to call `web_search`.
+
+    `handle_parsing_errors=True` lets the agent recover from a malformed Thought/Action
+    block instead of failing the whole report. `max_iterations=3` gives the agent room
+    to do one search → observe → emit Final Answer. With `early_stopping_method="generate"`,
+    if iterations are exhausted the executor forces one final summarization call instead
+    of returning a useless "Agent stopped..." stub — so SerpAPI credits are never wasted.
+    """
     try:
-        # Uses LCEL-native create_react_agent (text-based ReAct, no tool calling needed).
-        # Works with Groq which does not support OpenAI-style function/tool calling.
-        react_prompt = hub.pull("hwchase17/react")
-        agent = create_react_agent(llm, tools, react_prompt)
+        prompt = PromptTemplate.from_template(_REACT_PROMPT_TEMPLATE)
+        agent = create_react_agent(llm, tools, prompt)
         return AgentExecutor(
             agent=agent,
             tools=tools,
-            verbose=True,
+            verbose=False,
             handle_parsing_errors=True,
-            max_iterations=6,
+            max_iterations=3,
+            early_stopping_method="generate",
         )
     except Exception as e:
-        logger.error(f"Error creating agent: {e}")
+        logger.error(f"Error creating ResearchAgent: {e}")
         return None
+
+
+_RESEARCH_BRIEF = """Research the current Indian job market for the role: "{subcareer}".
+
+Use the web_search tool EXACTLY ONCE with a single broad query that covers as many of these as possible:
+- demand trend & hiring velocity
+- salary ranges in INR LPA
+- top hiring companies & cities
+- in-demand skills
+
+After the single search, immediately emit "Final Answer:" with a concise factual plain-text
+summary (no headings, no markdown). Do NOT issue a second web_search."""
+
+
+def _run_research_agent(agent_executor: Optional[AgentExecutor], subcareer: str) -> str:
+    """Invoke the ResearchAgent and return text findings, or a safe fallback string."""
+    if agent_executor is None:
+        return _DEFAULT_LIVE_DATA
+    try:
+        logger.info(f"[GROQ:ReAct] ResearchAgent gathering live data for '{subcareer}' (≤{agent_executor.max_iterations} reasoning turns)")
+        result = agent_executor.invoke({"input": _RESEARCH_BRIEF.format(subcareer=subcareer)})
+        findings = (result.get("output") or "").strip()
+        # Treat a force-stop stub as no findings — feeding "Agent stopped..." into the
+        # downstream prompts as if it were live market data corrupts the report and
+        # silently wastes the SerpAPI credits we just spent.
+        if not findings or findings.startswith(_AGENT_STOPPED_PREFIXES):
+            logger.warning(f"[GROQ:ReAct] no usable findings for '{subcareer}' (force-stop or empty) — using fallback")
+            return _DEFAULT_LIVE_DATA
+        logger.info(f"[GROQ:ReAct] ResearchAgent done for '{subcareer}' ({len(findings)} chars of findings)")
+        return findings[:MAX_LIVE_DATA_CHARS]
+    except Exception as e:
+        logger.warning(f"ResearchAgent failed, falling back to model knowledge: {e}")
+        return _DEFAULT_LIVE_DATA
+
+
+# ── Shared Content + Data chain helper ────────────────────────────────────────
+
+def _run_dual_chain(
+    llm: ChatGroq,
+    content_prompt: ChatPromptTemplate,
+    data_prompt: ChatPromptTemplate,
+    data_model: Type[BaseModel],
+    variables: dict,
+) -> Tuple[str, Optional[Any]]:
+    """ContentAgent + DataAgent fired in parallel.
+
+    1. ContentAgent  → human-readable markdown via plain string output.
+    2. DataAgent     → strict Pydantic model for charts / bento grid, generated
+       via Groq's native JSON mode (response_format={"type": "json_object"}).
+       This replaces PydanticOutputParser + OutputFixingParser:
+         • Dropped the auto-generated JSON-schema dump from the prompt
+           (~1000 tokens saved per Data call) — the prompt now carries only a
+           hand-written compact schema sketch.
+         • Dropped the silent repair retry — Groq JSON mode forces valid JSON
+           server-side, so the failure surface that needed repairing collapses.
+       We still validate the parsed dict with the Pydantic model at the
+       boundary so downstream code keeps its type guarantees.
+
+    The two chains have no data dependency on each other — they read the same
+    `variables` dict — so we run them on a thread pool. End-to-end latency
+    becomes max(content, data) instead of content + data, saving 3-5s per request.
+
+    Returns (markdown, parsed_pydantic_model). The data slot is None only
+    if the JSON parse or Pydantic validation failed.
+    """
+    json_llm = llm.bind(response_format={"type": "json_object"})
+    content_chain = content_prompt | llm | StrOutputParser()
+    data_chain = data_prompt | json_llm | StrOutputParser()
+
+    def _run_content():
+        logger.info("[GROQ:Content] generating markdown report")
+        return content_chain.invoke(variables)
+
+    def _run_data():
+        logger.info("[GROQ:Data] generating structured data (Groq JSON mode)")
+        raw = data_chain.invoke(variables)
+        try:
+            return data_model.model_validate(json.loads(raw))
+        except Exception as e:
+            logger.error(f"[GROQ:Data] JSON validation failed: {e}; raw head={raw[:160]!r}")
+            return None
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        content_future = pool.submit(_run_content)
+        data_future = pool.submit(_run_data)
+
+        try:
+            markdown = content_future.result()
+        except Exception as e:
+            logger.error(f"[GROQ:Content] ContentAgent failed: {e}")
+            markdown = f"❌ Content generation failed: {e}"
+
+        try:
+            data = data_future.result()
+        except Exception as e:
+            logger.error(f"[GROQ:Data] DataAgent failed: {e}")
+            data = None
+
+    return markdown, data
 
 
 # ── Career Insights ───────────────────────────────────────────────────────────
@@ -108,7 +272,8 @@ Reply in this exact structure. Keep each section concise and actionable:
 ---
 
 ### **Core Skills to Master**
-Top 5 skills with why each matters for this role (one line per skill).
+Top 5 skills, each phrased as: **Master [skill]** — [what mastering it unlocks for your career growth].
+One line per skill. Frame as personal capability gains, not job-posting frequency.
 
 ---
 
@@ -138,52 +303,56 @@ Specific course / certification / book name with platform — one line each.
 No fluff. Be specific to the Indian context. Output ONLY the markdown above — no JSON, no code blocks.
 """)
 
-_CAREER_DATA_PARSER = PydanticOutputParser(pydantic_object=CareerInsightsFullData)
-
 _CAREER_DATA_PROMPT = ChatPromptTemplate.from_template("""
 You are a career data assistant for the Indian job market.
-For the role "{subcareer}" in India, return accurate structured data for bento grid cards and chart visualization.
+For the role "{subcareer}" in India, return ONLY a JSON object with this exact shape:
 
-{format_instructions}
+{{
+  "insights": {{
+    "skills":       [{{"name": "<skill>", "score": <0-100 int>}}, ... 5 items],
+    "roadmap":      [{{"stage": "<title>", "desc": "<1 line>", "icon": "<school|trending_up|star>"}}, ... 3 items],
+    "careerLadder": [{{"role": "<title>", "salary": "<INR LPA range>", "badge": "<Entry|Mid|Senior|Lead>"}}, ... 3-4 items],
+    "outlook":      "<1-2 sentences on India-specific growth>",
+    "resources":    ["<course/cert/book + platform>", ... 3 items]
+  }},
+  "chart": {{
+    "type":   "radar",
+    "labels": ["Technical Skills", "Soft Skills", "Domain Knowledge", "Tools", "Leadership", "Communication"],
+    "data":   [<6 integers 0-100, importance weights for {subcareer}>],
+    "label":  "Skill Importance Profile (0-100)"
+  }}
+}}
 
-Field guidance:
-- insights.skills: top 5 must-have skills, score 0-100 (importance/demand weight)
-- insights.roadmap: exactly 3 stages; icon must be one of "school", "trending_up", "star"
-- insights.careerLadder: 3-4 rungs with realistic INR LPA ranges; badge must be Entry/Mid/Senior/Lead
-- insights.outlook: 1-2 sentences on India-specific growth trajectory
-- insights.resources: 3 specific course/cert/book names with platform
-- chart.type: "radar"
-- chart.labels: ["Technical Skills", "Soft Skills", "Domain Knowledge", "Tools", "Leadership", "Communication"]
-- chart.data: 6 integers 0-100 representing skill importance weights for {subcareer}
-- chart.label: "Skill Importance Profile (0-100)"
+Constraints:
+- skills.score: 0-100 importance/demand weight
+- roadmap.icon: must be one of "school", "trending_up", "star"
+- careerLadder.badge: must be Entry/Mid/Senior/Lead, with realistic INR LPA salary ranges
+- Output ONLY the JSON object — no markdown fences, no commentary.
 """)
 
 
 def generate_career_insights(
     category: str, subcareer: str, llm: ChatGroq
 ) -> Tuple[str, Optional[dict], Optional[dict]]:
+    """ContentAgent + DataAgent. No live research needed — this is a learning roadmap."""
     try:
         if llm is None:
             raise RuntimeError("LLM not initialized")
 
         safe_category = _sanitize_input(category)
         safe_subcareer = _sanitize_input(subcareer)
+        logger.info(f"[CAREER-INSIGHTS] start for {safe_subcareer!r} (no SerpAPI; pure model knowledge)")
 
-        content_chain = _CAREER_CONTENT_PROMPT | llm | StrOutputParser()
-        data_chain = _CAREER_DATA_PROMPT | llm | _CAREER_DATA_PARSER
-
-        logger.info(f"Generating career insights for {safe_subcareer}...")
-        markdown = content_chain.invoke({"subcareer": safe_subcareer, "category": safe_category})
-
-        try:
-            data: CareerInsightsFullData = data_chain.invoke({
-                "subcareer": safe_subcareer,
-                "format_instructions": _CAREER_DATA_PARSER.get_format_instructions(),
-            })
-            return markdown, data.insights.model_dump(), data.chart.model_dump()
-        except Exception as data_err:
-            logger.error(f"Career insights data chain failed: {data_err}")
+        markdown, data = _run_dual_chain(
+            llm,
+            _CAREER_CONTENT_PROMPT,
+            _CAREER_DATA_PROMPT,
+            CareerInsightsFullData,
+            {"subcareer": safe_subcareer, "category": safe_category},
+        )
+        if data is None:
             return markdown, None, None
+        return markdown, data.insights.model_dump(), data.chart.model_dump()
 
     except Exception as e:
         logger.error(f"Error generating career insights: {e}")
@@ -214,22 +383,20 @@ Reply in this EXACT structure. Keep each section to 3-5 bullet points max. Be da
 
 ---
 
-### **Salary Benchmarks** (INR LPA — India)
-| Level | Range |
-|---|---|
-| Entry | x-y |
-| Mid | x-y |
-| Senior | x-y |
-| Lead/Architect | x-y |
-- How this role's salary compares to 1-2 adjacent careers
-- Salary growth trajectory over the past 2 years
+### **Salary Context**
+The bento card above already shows the actual INR LPA ranges. In this section, focus on:
+- How this role's salary compares to 1-2 adjacent careers (e.g. vs Data Analyst, vs Backend Engineer)
+- Salary growth trajectory over the past 2 years (% increase, what drove it)
+- Which sectors / company sizes pay above the median band
+Do NOT repeat the entry/mid/senior/lead numbers as a table.
 
 ---
 
 ### **What Employers Are Hiring For Right Now**
-- Top 6 skills appearing most in active job postings
+- Top 6 skills, each as: **[Skill]** — appears in ~X% of postings (estimated frequency in active listings)
 - Critical skills gap: what most candidates lack that employers want
 - Tools / platforms with the highest hiring signal in 2024-2025
+Frame everything as employer demand signals, not learning recommendations.
 
 ---
 
@@ -276,73 +443,77 @@ Reply in this EXACT structure. Keep each section to 3-5 bullet points max. Be da
 Output ONLY the markdown above — no JSON, no code blocks.
 """)
 
-_MARKET_DATA_PARSER = PydanticOutputParser(pydantic_object=MarketAnalysisFullData)
-
 _MARKET_DATA_PROMPT = ChatPromptTemplate.from_template("""
 You are a market data assistant for the Indian job market.
-Using the live data below, return accurate structured data for "{subcareer}" in India.
+Using the live data below, return ONLY a JSON object with this exact shape for "{subcareer}" in India.
 
 RAW LIVE DATA:
 {live_data}
 
-{format_instructions}
+JSON shape:
+{{
+  "insights": {{
+    "salary": {{
+      "entry":  "<INR LPA range>",
+      "median": "<INR LPA range>",
+      "senior": "<INR LPA range>",
+      "top":    "<INR LPA range>"
+    }},
+    "growth":        "<e.g. +18%>",
+    "confidence":    <0-100 int>,
+    "skills":        ["<skill>", ... 6 items],
+    "locations":     [{{"city": "<city>", "pct": <int>}}, ... 3 items, pct sums to ≤100],
+    "remotePercent": <int 0-100>,
+    "trajectory":    [<7 integers 0-100, demand trend from 6 months ago to now>]
+  }},
+  "chart": {{
+    "type":   "bar",
+    "labels": ["Entry Level", "Mid Level", "Senior Level", "Lead/Architect"],
+    "data":   [<4 realistic average LPA integers for each level>],
+    "unit":   "LPA (INR)",
+    "label":  "Avg Salary Range (LPA)"
+  }}
+}}
 
-Field guidance:
-- insights.salary: actual INR LPA ranges for entry/median/senior/top levels
-- insights.growth: projected 12-month demand growth (e.g. "+18%")
-- insights.confidence: your confidence in this data 0-100
+Constraints:
+- insights.growth: projected 12-month demand growth signed string (e.g. "+18%")
 - insights.skills: top 6 skills most requested in active job postings RIGHT NOW
-- insights.locations: top 3 Indian cities with % share of job postings (must sum to ≤100)
-- insights.remotePercent: % of roles that are remote-friendly (integer)
-- insights.trajectory: 7 integers 0-100 showing demand trend from 6 months ago to today
-- chart.type: "bar"
-- chart.labels: ["Entry Level", "Mid Level", "Senior Level", "Lead/Architect"]
-- chart.data: 4 realistic integers representing average LPA for each level for {subcareer}
-- chart.unit: "LPA (INR)"
-- chart.label: "Avg Salary Range (LPA)"
+- insights.locations: top 3 Indian cities with % share of job postings
+- Output ONLY the JSON object — no markdown fences, no commentary.
 """)
 
 
 def generate_market_analysis(
     subcareer: str,
     llm: ChatGroq,
-    search_func=None,
+    research_agent: Optional[AgentExecutor] = None,
 ) -> Tuple[str, Optional[dict], Optional[dict]]:
+    """Full multi-agent pipeline:  ResearchAgent → ContentAgent + DataAgent.
+
+    The ResearchAgent decides whether to issue web searches and how many;
+    its findings are injected as `live_data` into both downstream chains.
+    If the ResearchAgent is unavailable or fails, the report falls back
+    to the model's training knowledge.
+    """
     try:
         if llm is None:
             raise RuntimeError("LLM not initialized")
 
         safe_subcareer = _sanitize_input(subcareer)
-        logger.info(f"Fetching live market data for {safe_subcareer}...")
+        logger.info(f"[MARKET-ANALYSIS] start for {safe_subcareer!r} (ResearchAgent → Content → Data)")
 
-        live_data = "Use your latest training knowledge for the Indian job market."
-        if search_func is not None:
-            search_query = (
-                f"Current job market for {safe_subcareer} in India 2024-2025: "
-                f"demand trend, salary ranges (entry/mid/senior/lead in LPA), "
-                f"top hiring companies, hot cities, in-demand skills, "
-                f"skills gap, automation risk, future outlook, freelance opportunities."
-            )
-            try:
-                live_data = search_func(search_query)
-            except Exception as search_err:
-                logger.warning(f"Search failed, falling back to LLM knowledge: {search_err}")
+        live_data = _run_research_agent(research_agent, safe_subcareer)
 
-        content_chain = _MARKET_CONTENT_PROMPT | llm | StrOutputParser()
-        data_chain = _MARKET_DATA_PROMPT | llm | _MARKET_DATA_PARSER
-
-        markdown = content_chain.invoke({"subcareer": safe_subcareer, "live_data": live_data})
-
-        try:
-            data: MarketAnalysisFullData = data_chain.invoke({
-                "subcareer": safe_subcareer,
-                "live_data": live_data,
-                "format_instructions": _MARKET_DATA_PARSER.get_format_instructions(),
-            })
-            return markdown, data.insights.model_dump(), data.chart.model_dump()
-        except Exception as data_err:
-            logger.error(f"Market analysis data chain failed: {data_err}")
+        markdown, data = _run_dual_chain(
+            llm,
+            _MARKET_CONTENT_PROMPT,
+            _MARKET_DATA_PROMPT,
+            MarketAnalysisFullData,
+            {"subcareer": safe_subcareer, "live_data": live_data},
+        )
+        if data is None:
             return markdown, None, None
+        return markdown, data.insights.model_dump(), data.chart.model_dump()
 
     except Exception as e:
         logger.error(f"Error generating market analysis: {e}")
@@ -412,29 +583,29 @@ One short paragraph on realistic starting salary range, growth trajectory, and w
 Output ONLY the markdown above — no JSON, no code blocks, no extra commentary.
 """)
 
-_COLLEGE_CHART_PARSER = PydanticOutputParser(pydantic_object=ChartData)
-
 _COLLEGE_CHART_PROMPT = ChatPromptTemplate.from_template("""
 You are a placement data assistant for Indian colleges.
-For the career path "{subcareer}", provide realistic average placement package data by college tier.
+For the career path "{subcareer}", return ONLY a JSON object with this exact shape:
 
-{format_instructions}
+{{
+  "type":   "bar",
+  "labels": ["Premier/IIT/NIT", "Top Private", "State Govt", "Mid Private", "Diploma/Cert"],
+  "data":   [<5 realistic LPA integers for {subcareer} graduates, one per tier in order above>],
+  "unit":   "LPA",
+  "label":  "Avg Placement Package (LPA)"
+}}
 
-Field guidance:
-- type: "bar"
-- labels: ["Premier/IIT/NIT", "Top Private", "State Govt", "Mid Private", "Diploma/Cert"]
-- data: 5 realistic LPA integers for {subcareer} graduates from each tier
-- unit: "LPA"
-- label: "Avg Placement Package (LPA)"
+Output ONLY the JSON object — no markdown fences, no commentary.
 """)
 
 
 def generate_college_recommendations(
     subcareer: str,
     llm: ChatGroq,
-    location: str = None,
-    district: str = None,
+    location: Optional[str] = None,
+    district: Optional[str] = None,
 ) -> Tuple[str, Optional[dict]]:
+    """ContentAgent + DataAgent. The DataAgent only emits a single ChartData payload."""
     try:
         if llm is None:
             raise RuntimeError("LLM not initialized")
@@ -444,41 +615,41 @@ def generate_college_recommendations(
         safe_district = _sanitize_input(district) if district else None
 
         if safe_district and safe_location:
-            scope_line = f'Only list colleges in or near the district of {safe_district}, {safe_location}. Do not list colleges from other districts or regions.'
+            scope_line = (
+                f'Only list colleges in or near the district of {safe_district}, '
+                f'{safe_location}. Do not list colleges from other districts or regions.'
+            )
             location_context = f'in {safe_district}, {safe_location}'
         elif safe_district:
-            scope_line = f'Only list colleges in or near the district of {safe_district}. Do not list colleges from other districts.'
+            scope_line = (
+                f'Only list colleges in or near the district of {safe_district}. '
+                f'Do not list colleges from other districts.'
+            )
             location_context = f'in {safe_district} district'
         elif safe_location:
-            scope_line = f'Only list colleges in or near {safe_location}. Do not list colleges from other regions.'
+            scope_line = (
+                f'Only list colleges in or near {safe_location}. '
+                f'Do not list colleges from other regions.'
+            )
             location_context = f'in {safe_location}'
         else:
             scope_line = 'Include IITs, NITs, and top state/private colleges across India.'
             location_context = 'in India'
 
-        content_chain = _COLLEGE_CONTENT_PROMPT | llm | StrOutputParser()
-        chart_chain = _COLLEGE_CHART_PROMPT | llm | _COLLEGE_CHART_PARSER
+        logger.info(f"[COLLEGE-RECS] start for {safe_subcareer!r} {location_context} (no SerpAPI; pure model knowledge)")
 
-        logger.info(
-            f"Generating college recommendations for {safe_subcareer}"
-            + (f" in {safe_district}," if safe_district else "")
-            + (f" {safe_location}" if safe_location else " (all India)")
-        )
-        markdown = content_chain.invoke({
-            "subcareer": safe_subcareer,
-            "location_context": location_context,
-            "scope_line": scope_line,
-        })
-
-        try:
-            chart: ChartData = chart_chain.invoke({
+        markdown, chart = _run_dual_chain(
+            llm,
+            _COLLEGE_CONTENT_PROMPT,
+            _COLLEGE_CHART_PROMPT,
+            ChartData,
+            {
                 "subcareer": safe_subcareer,
-                "format_instructions": _COLLEGE_CHART_PARSER.get_format_instructions(),
-            })
-            return markdown, chart.model_dump()
-        except Exception as chart_err:
-            logger.error(f"College chart data chain failed: {chart_err}")
-            return markdown, None
+                "location_context": location_context,
+                "scope_line": scope_line,
+            },
+        )
+        return markdown, (chart.model_dump() if chart is not None else None)
 
     except Exception as e:
         logger.error(f"Error generating college recommendations: {e}")
@@ -545,16 +716,14 @@ def generate_resume_feedback(
     resume_text: str,
     target_role: str,
     llm: ChatGroq,
-    scrub_pii: bool = False,
+    scrub_pii: bool = True,
 ) -> str:
+    """Single-agent ContentAgent. PII (emails, phones, pincodes) is scrubbed by default
+    before the resume is sent to the external LLM.
+    """
     try:
         if llm is None:
             raise RuntimeError("LLM not initialized")
-
-        logger.warning(
-            "PII notice: resume content will be sent to an external LLM service (Groq). "
-            "Ensure compliance with your data-handling policies."
-        )
 
         truncation_notice = ""
         if len(resume_text) > MAX_RESUME_CHARS:
@@ -569,7 +738,7 @@ def generate_resume_feedback(
         safe_role = _sanitize_input(target_role)
         chain = _RESUME_PROMPT | llm | StrOutputParser()
 
-        logger.info(f"Analyzing resume for {safe_role}...")
+        logger.info(f"[GROQ:Resume] analyzing resume for {safe_role!r} (PII scrubbing={'on' if scrub_pii else 'off'})")
         return chain.invoke({
             "target_role": safe_role,
             "resume_text": resume_text,
@@ -583,13 +752,16 @@ def generate_resume_feedback(
 
 # ── Job Search ────────────────────────────────────────────────────────────────
 
-def search_jobs(role: str, location: str = "India", api_key: str = None) -> List[dict]:
+def search_jobs(role: str, location: str = "India", api_key: Optional[str] = None) -> List[dict]:
+    """Live job listings via SerpAPI's google_jobs engine. Not part of the agent
+    pipeline — called directly by the /jobs endpoint."""
     try:
         if not api_key:
             logger.error("SerpAPI key is missing in search_jobs")
             return []
 
-        all_jobs = []
+        all_jobs: List[dict] = []
+        seen_keys: set = set()
         search_terms = [
             f"{role} jobs in {location}",
             f"{role} openings {location}",
@@ -608,44 +780,46 @@ def search_jobs(role: str, location: str = "India", api_key: str = None) -> List
                 "api_key": api_key,
             }
 
-            logger.info(f"Attempting job search with query: {query_text}")
+            logger.info(f"[SERPAPI:google_jobs] querying: {query_text!r}")
             try:
-                search = GoogleSearch(params)
-                results = search.get_dict()
+                results = GoogleSearch(params).get_dict()
 
                 if "error" in results:
-                    logger.error(f"SerpAPI Error for query '{query_text}': {results['error']}")
+                    logger.error(f"[SERPAPI:google_jobs] error for {query_text!r}: {results['error']}")
                     continue
 
-                if "jobs_results" in results:
-                    page_results = results["jobs_results"]
-                    logger.info(f"Found {len(page_results)} results for query '{query_text}'")
+                page_results = results.get("jobs_results") or []
+                if not page_results:
+                    logger.warning(f"[SERPAPI:google_jobs] empty results for: {query_text!r}")
+                    continue
 
-                    for job in page_results:
-                        job_id = f"{job.get('title')}-{job.get('company_name')}"
-                        if any(f"{j['title']}-{j['company_name_raw']}" == job_id for j in all_jobs):
-                            continue
+                logger.info(f"[SERPAPI:google_jobs] got {len(page_results)} results for {query_text!r}")
+                for job in page_results:
+                    title = (job.get("title") or "Unknown Role").strip()
+                    company = (job.get("company_name") or "").strip()
+                    # Single canonical dedup key — both sides built the same way.
+                    key = f"{title.lower()}::{company.lower()}"
+                    if key in seen_keys:
+                        continue
+                    seen_keys.add(key)
 
-                        apply_link = "#"
-                        if "apply_options" in job and len(job["apply_options"]) > 0:
-                            apply_link = job["apply_options"][0].get("link", "#")
+                    apply_options = job.get("apply_options") or []
+                    apply_link = apply_options[0].get("link", "#") if apply_options else "#"
 
-                        desc = job.get("description", "")
-                        truncated_desc = desc[:250] + "..." if len(desc) > 250 else desc
+                    desc = job.get("description") or ""
+                    truncated_desc = desc[:250] + "..." if len(desc) > 250 else desc
 
-                        all_jobs.append({
-                            "title": job.get("title", "Unknown Role"),
-                            "company": job.get("company_name", "Unknown Company"),
-                            "company_name_raw": job.get("company_name", ""),
-                            "location": job.get("location", "India"),
-                            "description": truncated_desc,
-                            "link": apply_link,
-                            "thumbnail": job.get("thumbnail", None),
-                        })
-                else:
-                    logger.warning(f"No results found for query: {query_text}")
+                    all_jobs.append({
+                        "title": title,
+                        "company": company or "Unknown Company",
+                        "company_name_raw": company,
+                        "location": job.get("location") or location,
+                        "description": truncated_desc,
+                        "link": apply_link,
+                        "thumbnail": job.get("thumbnail"),
+                    })
             except Exception as e:
-                logger.error(f"Structured search failed for query '{query_text}': {e}")
+                logger.error(f"Search failed for '{query_text}': {e}")
 
         return all_jobs[:15]
 

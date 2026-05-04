@@ -45,26 +45,6 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      <div className="px-4 py-4 mt-auto">
-        <div className="bg-surface-container-high rounded-xl p-4 mb-4">
-          <p className="text-xs text-on-surface-variant mb-2">Unlock Premium Features</p>
-          <button className="w-full bg-gradient-primary py-2 rounded-lg text-on-primary text-xs font-bold">
-            Upgrade to Pro
-          </button>
-        </div>
-        <a
-          href="#"
-          className="text-on-surface-variant flex items-center gap-3 px-6 py-2 hover:text-on-surface transition-colors"
-        >
-          <span className="material-symbols-outlined">settings</span> Settings
-        </a>
-        <a
-          href="#"
-          className="text-on-surface-variant flex items-center gap-3 px-6 py-2 hover:text-on-surface transition-colors"
-        >
-          <span className="material-symbols-outlined">help</span> Support
-        </a>
-      </div>
     </aside>
   )
 }

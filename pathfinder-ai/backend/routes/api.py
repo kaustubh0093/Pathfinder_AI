@@ -25,35 +25,34 @@ from backend.config import Config
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Global LLM/Agent cache — initialized on first request
+# Global LLM / ResearchAgent cache — initialized on first request.
+# Returns (llm, research_agent). Both are needed for the multi-agent pipeline.
 _llm = None
 _agent = None
-_search_func = None
 _ai_init_lock = threading.Lock()
 
 
 def get_ai_components():
-    global _llm, _agent, _search_func
+    """Lazy-init the shared Groq LLM and the ResearchAgent (ReAct + web_search)."""
+    global _llm, _agent
     if _llm is None:
         with _ai_init_lock:
             if _llm is None:
                 if not Config.GROQ_API_KEY:
                     logger.error("GROQ_API_KEY is missing")
-                    return None, None, None
+                    return None, None
                 if not Config.SERPAPI_KEY:
                     logger.error("SERPAPI_KEY is missing")
-                    return None, None, None
+                    return None, None
                 tmp_llm, tools = initialize_llm_and_tools(Config.GROQ_API_KEY, Config.SERPAPI_KEY)
                 if not tmp_llm or not tools:
                     logger.error("LLM initialization returned no LLM or empty tools list")
-                    return None, None, None
-                tmp_search_func = tools[0].func
+                    return None, None
                 tmp_agent = create_agent_with_tools(tmp_llm, tools)
                 # Set _llm last so the outer guard stays valid until all globals are ready
-                _search_func = tmp_search_func
                 _agent = tmp_agent
                 _llm = tmp_llm
-    return _llm, _agent, _search_func
+    return _llm, _agent
 
 
 # ── Pydantic request models ───────────────────────────────────────────────────
@@ -147,7 +146,7 @@ async def get_careers():
 
 @router.post("/career-insights", summary="Generate career roadmap & analysis")
 async def career_insights(req: CareerInsightRequest):
-    llm, _, _ = get_ai_components()
+    llm, _ = get_ai_components()
     if not llm:
         raise HTTPException(status_code=500, detail="LLM not initialized. Check API keys.")
 
@@ -163,14 +162,13 @@ async def career_insights(req: CareerInsightRequest):
 
 @router.post("/market-analysis", summary="Live job market analysis — returns insights for bento grid")
 async def market_analysis(req: MarketRequest):
-    llm, _, search_func = get_ai_components()
+    llm, research_agent = get_ai_components()
     if not llm:
         raise HTTPException(status_code=500, detail="LLM not initialized. Check API keys.")
-    if not search_func:
-        raise HTTPException(status_code=500, detail="Search function not initialized.")
-
+    # ResearchAgent is optional — generate_market_analysis falls back to model
+    # knowledge if it's None, so we don't 500 here on agent init failure.
     markdown, insights, chart_data = await asyncio.to_thread(
-        generate_market_analysis, req.subcareer, llm, search_func
+        generate_market_analysis, req.subcareer, llm, research_agent
     )
     return {
         "result": as_markdown(markdown),
@@ -181,7 +179,7 @@ async def market_analysis(req: MarketRequest):
 
 @router.post("/college-recommendations", summary="Top Indian college recommendations")
 async def college_recommendations(req: CollegeRequest):
-    llm, _, _ = get_ai_components()
+    llm, _ = get_ai_components()
     if not llm:
         raise HTTPException(status_code=500, detail="LLM not initialized. Check API keys.")
 
@@ -211,7 +209,7 @@ async def resume_analysis(
     if not resume_text.strip():
         raise HTTPException(status_code=400, detail="No resume content provided.")
 
-    llm, _, _ = get_ai_components()
+    llm, _ = get_ai_components()
     if not llm:
         raise HTTPException(status_code=500, detail="LLM not initialized. Check API keys.")
 
@@ -221,7 +219,7 @@ async def resume_analysis(
 
 @router.post("/chat", summary="Interactive AI career advisor chat")
 async def chat(req: ChatRequest):
-    llm, _, _ = get_ai_components()
+    llm, _ = get_ai_components()
     if not llm:
         raise HTTPException(status_code=500, detail="AI components not initialized. Check API keys.")
     try:
@@ -234,6 +232,7 @@ async def chat(req: ChatRequest):
         else:
             user_input = req.message
 
+        logger.info(f"[GROQ:Chat] processing message ({len(req.history)} prior turns)")
         chain = _chat_prompt | llm | StrOutputParser()
         answer = await asyncio.to_thread(
             chain.invoke,

@@ -77,6 +77,12 @@ export default function MarketAnalysis() {
     <div className="w-full">
       {/* Hero Header */}
       <header className="mb-6">
+        <div className="flex items-center gap-3 mb-2">
+          <span className="px-3 py-1 bg-secondary/20 text-secondary rounded-full text-xs font-bold flex items-center gap-2 shadow-[0_0_12px_rgba(255,170,80,0.2)]">
+            <span className="w-1.5 h-1.5 bg-secondary rounded-full animate-pulse"></span>
+            LIVE MARKET FEED
+          </span>
+        </div>
         <h1 className="font-headline text-4xl md:text-5xl font-extrabold tracking-tight text-on-background mb-2">
           Real-Time <span className="text-primary">Market Pulse</span>
         </h1>
