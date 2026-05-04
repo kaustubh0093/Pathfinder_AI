@@ -31,16 +31,13 @@ _DEFAULT_LIVE_DATA = (
     "knowledge of the Indian job market)"
 )
 
-# When the AgentExecutor force-stops on iteration limit, LangChain returns this
-# literal string as the agent's `output`. We detect it so we don't pipe a useless
-# stub into the downstream Content/Data prompts as if it were live findings.
+# LangChain returns these strings on force-stop; treat them as no-findings.
 _AGENT_STOPPED_PREFIXES = (
     "Agent stopped due to iteration limit",
     "Agent stopped due to time limit",
 )
 
-# Inlined ReAct prompt. Avoids the network call to LangChain Hub at startup
-# and keeps the agent's contract visible in this file for the demo.
+# Inlined ReAct prompt — avoids the LangChain Hub network call at startup.
 _REACT_PROMPT_TEMPLATE = """Answer the following question as best you can. You have access to the following tools:
 
 {tools}
@@ -91,10 +88,7 @@ def initialize_llm_and_tools(
         if not serpapi_key:
             raise ValueError("SerpAPI key is required.")
 
-
-        # when ReAct asks for plain-text "Action:" lines. Groq then rejects
-        # the request with "Tool choice is none, but model called a tool".
-        # Llama 3.3 follows ReAct's text contract cleanly.
+        # Llama 3.3 follows ReAct's plain-text Action contract cleanly (gpt-oss does not).
         llm = ChatGroq(
             model="llama-3.3-70b-versatile",
             groq_api_key=groq_api_key,
@@ -107,9 +101,6 @@ def initialize_llm_and_tools(
         )
 
         # Wrap search.run so every SerpAPI hit announces itself in the log.
-        # Without this the only signal a search happened is a tool-call line buried
-        # inside the ReAct trace; this makes "did we just spend a SerpAPI credit?"
-        # readable at a glance.
         def logged_search(query: str) -> str:
             logger.info(f"[SERPAPI] querying: {query!r}")
             return search.run(query)
@@ -131,14 +122,7 @@ def initialize_llm_and_tools(
 
 
 def create_agent_with_tools(llm: ChatGroq, tools: List[Tool]) -> Optional[AgentExecutor]:
-    """Build the ResearchAgent — a ReAct executor that decides when to call `web_search`.
-
-    `handle_parsing_errors=True` lets the agent recover from a malformed Thought/Action
-    block instead of failing the whole report. `max_iterations=3` gives the agent room
-    to do one search → observe → emit Final Answer. With `early_stopping_method="generate"`,
-    if iterations are exhausted the executor forces one final summarization call instead
-    of returning a useless "Agent stopped..." stub — so SerpAPI credits are never wasted.
-    """
+    """ReAct agent with max_iterations=3 and early_stopping_method="generate" so findings are always usable."""
     try:
         prompt = PromptTemplate.from_template(_REACT_PROMPT_TEMPLATE)
         agent = create_react_agent(llm, tools, prompt)
@@ -175,9 +159,7 @@ def _run_research_agent(agent_executor: Optional[AgentExecutor], subcareer: str)
         logger.info(f"[GROQ:ReAct] ResearchAgent gathering live data for '{subcareer}' (≤{agent_executor.max_iterations} reasoning turns)")
         result = agent_executor.invoke({"input": _RESEARCH_BRIEF.format(subcareer=subcareer)})
         findings = (result.get("output") or "").strip()
-        # Treat a force-stop stub as no findings — feeding "Agent stopped..." into the
-        # downstream prompts as if it were live market data corrupts the report and
-        # silently wastes the SerpAPI credits we just spent.
+        # Force-stop stubs corrupt downstream reports — treat as no-findings.
         if not findings or findings.startswith(_AGENT_STOPPED_PREFIXES):
             logger.warning(f"[GROQ:ReAct] no usable findings for '{subcareer}' (force-stop or empty) — using fallback")
             return _DEFAULT_LIVE_DATA
