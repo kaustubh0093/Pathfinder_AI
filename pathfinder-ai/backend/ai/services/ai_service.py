@@ -179,26 +179,11 @@ def _run_dual_chain(
     data_model: Type[BaseModel],
     variables: dict,
 ) -> Tuple[str, Optional[Any]]:
-    """ContentAgent + DataAgent fired in parallel.
+    """ContentAgent + DataAgent fired in parallel using a thread pool.
 
-    1. ContentAgent  → human-readable markdown via plain string output.
-    2. DataAgent     → strict Pydantic model for charts / bento grid, generated
-       via Groq's native JSON mode (response_format={"type": "json_object"}).
-       This replaces PydanticOutputParser + OutputFixingParser:
-         • Dropped the auto-generated JSON-schema dump from the prompt
-           (~1000 tokens saved per Data call) — the prompt now carries only a
-           hand-written compact schema sketch.
-         • Dropped the silent repair retry — Groq JSON mode forces valid JSON
-           server-side, so the failure surface that needed repairing collapses.
-       We still validate the parsed dict with the Pydantic model at the
-       boundary so downstream code keeps its type guarantees.
-
-    The two chains have no data dependency on each other — they read the same
-    `variables` dict — so we run them on a thread pool. End-to-end latency
-    becomes max(content, data) instead of content + data, saving 3-5s per request.
-
-    Returns (markdown, parsed_pydantic_model). The data slot is None only
-    if the JSON parse or Pydantic validation failed.
+    ContentAgent returns human-readable markdown; DataAgent returns a Pydantic model
+    validated from Groq JSON-mode output (no schema dump in prompt, no repair retry).
+    Returns (markdown, parsed_model); data slot is None on parse or validation failure.
     """
     json_llm = llm.bind(response_format={"type": "json_object"})
     content_chain = content_prompt | llm | StrOutputParser()
@@ -470,12 +455,10 @@ def generate_market_analysis(
     llm: ChatGroq,
     research_agent: Optional[AgentExecutor] = None,
 ) -> Tuple[str, Optional[dict], Optional[dict]]:
-    """Full multi-agent pipeline:  ResearchAgent → ContentAgent + DataAgent.
+    """Full multi-agent pipeline: ResearchAgent → ContentAgent + DataAgent.
 
-    The ResearchAgent decides whether to issue web searches and how many;
-    its findings are injected as `live_data` into both downstream chains.
-    If the ResearchAgent is unavailable or fails, the report falls back
-    to the model's training knowledge.
+    ResearchAgent findings are injected as live_data into both downstream chains.
+    Falls back to model training knowledge if ResearchAgent is unavailable or fails.
     """
     try:
         if llm is None:
