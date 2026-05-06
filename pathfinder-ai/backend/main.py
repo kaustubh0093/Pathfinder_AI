@@ -1,4 +1,5 @@
-from fastapi import FastAPI
+import os
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
@@ -12,17 +13,25 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+_default_origins = "http://localhost:5173,http://localhost:5174,http://localhost:3000"
+origins = os.getenv("ALLOWED_ORIGINS", _default_origins).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://localhost:3000",
-    ],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+APP_SECRET = os.getenv("APP_SECRET")
+
+@app.middleware("http")
+async def check_secret(request: Request, call_next):
+    if APP_SECRET and request.url.path.startswith("/api"):
+        if request.headers.get("X-App-Secret") != APP_SECRET:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+    return await call_next(request)
 
 app.include_router(router, prefix="/api")
 
