@@ -14,6 +14,8 @@ class Config:
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
     SERPAPI_KEY = os.getenv("SERPAPI_API_KEY")
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key")
+    LANGSMITH_TRACING = os.getenv("LANGSMITH_TRACING", "").lower() == "true"
+    LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT", "default")
 
     @staticmethod
     def validate():
@@ -21,6 +23,11 @@ class Config:
             print("⚠️  WARNING: GROQ_API_KEY not found in environment or .env")
         if not Config.SERPAPI_KEY:
             print("⚠️  WARNING: SERPAPI_API_KEY not found in environment or .env")
+        if Config.LANGSMITH_TRACING:
+            if not os.getenv("LANGSMITH_API_KEY"):
+                print("⚠️  WARNING: LANGSMITH_TRACING=true but LANGSMITH_API_KEY missing — tracing disabled")
+            else:
+                print(f"✅ LangSmith tracing enabled → project={Config.LANGSMITH_PROJECT!r}")
 
 
 Config.validate()
