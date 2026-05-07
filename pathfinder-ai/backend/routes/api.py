@@ -168,7 +168,7 @@ async def market_analysis(req: MarketRequest):
     # ResearchAgent is optional — generate_market_analysis falls back to model
     # knowledge if it's None, so we don't 500 here on agent init failure.
     markdown, insights, chart_data = await asyncio.to_thread(
-        generate_market_analysis, req.subcareer, llm, research_agent
+        generate_market_analysis, req.subcareer, llm, research_agent, Config.SERPAPI_KEY
     )
     return {
         "result": as_markdown(markdown),
@@ -184,7 +184,12 @@ async def college_recommendations(req: CollegeRequest):
         raise HTTPException(status_code=500, detail="LLM not initialized. Check API keys.")
 
     markdown, chart_data = await asyncio.to_thread(
-        generate_college_recommendations, req.subcareer, llm, req.location, req.district
+        generate_college_recommendations,
+        req.subcareer,
+        llm,
+        req.location,
+        req.district,
+        Config.SERPAPI_KEY,
     )
     return {
         "result": as_markdown(markdown),

@@ -31,6 +31,11 @@ _DEFAULT_LIVE_DATA = (
     "knowledge of the Indian job market)"
 )
 
+_DEFAULT_COLLEGE_LIVE_DATA = (
+    "(no live web search performed — fall back to the model's training "
+    "knowledge of Indian colleges, NIRF rankings, and placement data)"
+)
+
 # LangChain returns these strings on force-stop; treat them as no-findings.
 _AGENT_STOPPED_PREFIXES = (
     "Agent stopped due to iteration limit",
@@ -49,7 +54,7 @@ Thought: think about what to do next
 Action: the action to take, must be one of [{tool_names}]
 Action Input: the input to the action
 Observation: the result of the action
-... (Thought / Action / Action Input / Observation may repeat at most 3 times)
+... (Thought / Action / Action Input / Observation may repeat at most 2 times)
 Thought: I now know the final answer
 Final Answer: a concise factual summary answering the question
 
@@ -122,7 +127,9 @@ def initialize_llm_and_tools(
 
 
 def create_agent_with_tools(llm: ChatGroq, tools: List[Tool]) -> Optional[AgentExecutor]:
-    """ReAct agent with max_iterations=3 and early_stopping_method="generate" so findings are always usable."""
+    """ReAct agent with max_iterations=2 and early_stopping_method="generate" so findings
+    are always usable. The brief asks for exactly one web_search → Final Answer, so 2
+    turns is the tight upper bound (1 search action + 1 final answer)."""
     try:
         prompt = PromptTemplate.from_template(_REACT_PROMPT_TEMPLATE)
         agent = create_react_agent(llm, tools, prompt)
@@ -131,7 +138,7 @@ def create_agent_with_tools(llm: ChatGroq, tools: List[Tool]) -> Optional[AgentE
             tools=tools,
             verbose=False,
             handle_parsing_errors=True,
-            max_iterations=3,
+            max_iterations=2,
             early_stopping_method="generate",
         )
     except Exception as e:
@@ -386,6 +393,28 @@ Frame everything as employer demand signals, not learning recommendations.
 
 ---
 
+### **Hiring Source Mix**
+- Estimated split across channels: Employee referrals %, Job portals (Naukri/LinkedIn) %, Campus placements %, Recruitment agencies %, Direct/Inbound %
+- Which channel currently has the highest conversion rate for "{subcareer}" in India
+- 1 line on what this mix means for a candidate's job-search strategy
+
+---
+
+### **Interview Loop Reality**
+- Typical number of interview rounds (range)
+- What each round usually tests: e.g., screening → DSA/case → systems/role-specific → behavioral → leadership
+- Average end-to-end timeline from application to offer (weeks)
+- 2 most common rejection reasons employers cite for this role
+
+---
+
+### **Sector Salary Premium**
+- Compare typical compensation across sectors hiring for "{subcareer}" in India: Product/SaaS startups, Big Tech (FAANG-equiv), Fintech, E-commerce, Services/Consulting, Traditional enterprise
+- Show as bullets: **[Sector]** — typical mid-level INR LPA range — 1 line on why higher/lower
+- End with which 2 sectors offer the best risk-adjusted upside right now
+
+---
+
 ### **Market Risk Factors**
 - Automation / AI displacement risk for this role
 - Industry concentration risk (too dependent on one sector?)
@@ -454,11 +483,14 @@ def generate_market_analysis(
     subcareer: str,
     llm: ChatGroq,
     research_agent: Optional[AgentExecutor] = None,
+    serpapi_key: Optional[str] = None,
 ) -> Tuple[str, Optional[dict], Optional[dict]]:
     """Full multi-agent pipeline: ResearchAgent → ContentAgent + DataAgent.
 
     ResearchAgent findings are injected as live_data into both downstream chains.
     Falls back to model training knowledge if ResearchAgent is unavailable or fails.
+    When serpapi_key is supplied, a "Recent Live Postings" section is appended
+    to the markdown using verified google_jobs results.
     """
     try:
         if llm is None:
@@ -476,6 +508,11 @@ def generate_market_analysis(
             MarketAnalysisFullData,
             {"subcareer": safe_subcareer, "live_data": live_data},
         )
+
+        postings_section = _format_recent_postings_section(safe_subcareer, serpapi_key)
+        if postings_section:
+            markdown = (markdown or "") + postings_section
+
         if data is None:
             return markdown, None, None
         return markdown, data.insights.model_dump(), data.chart.model_dump()
@@ -487,6 +524,62 @@ def generate_market_analysis(
 
 # ── College Recommendations ───────────────────────────────────────────────────
 
+def _search_colleges_web(subcareer: str, location_context: str, api_key: Optional[str]) -> str:
+    """Fetch live college signals (rankings, placements, cutoffs) via direct SerpAPI calls.
+
+    Returns a plain-text blob of search-result snippets to inject as `live_data` into the
+    college prompts. Returns the default fallback string if the key is missing or both
+    queries fail — callers should still proceed with pure model knowledge in that case.
+    """
+    if not api_key:
+        return _DEFAULT_COLLEGE_LIVE_DATA
+
+    queries = [
+        f"top colleges for {subcareer} {location_context} placements average package recruiters NIRF",
+        f"{subcareer} colleges {location_context} cutoff rank fees admission 2024 2025",
+    ]
+
+    blocks: List[str] = []
+    for query_text in queries:
+        params = {
+            "engine": "google",
+            "q": query_text,
+            "google_domain": "google.com",
+            "gl": "in",
+            "hl": "en",
+            "num": 8,
+            "api_key": api_key,
+        }
+        logger.info(f"[SERPAPI:colleges] querying: {query_text!r}")
+        try:
+            results = GoogleSearch(params).get_dict()
+            if "error" in results:
+                logger.error(f"[SERPAPI:colleges] error for {query_text!r}: {results['error']}")
+                continue
+            organic = results.get("organic_results") or []
+            if not organic:
+                logger.warning(f"[SERPAPI:colleges] empty results for: {query_text!r}")
+                continue
+
+            section_lines = [f"--- Search: {query_text} ---"]
+            for item in organic[:8]:
+                title = (item.get("title") or "").strip()
+                snippet = (item.get("snippet") or "").strip()
+                link = (item.get("link") or "").strip()
+                if not (title or snippet):
+                    continue
+                section_lines.append(f"• {title}\n  {snippet}\n  Source: {link}")
+            blocks.append("\n".join(section_lines))
+        except Exception as e:
+            logger.warning(f"[SERPAPI:colleges] query failed for {query_text!r}: {e}")
+
+    if not blocks:
+        return _DEFAULT_COLLEGE_LIVE_DATA
+
+    combined = "\n\n".join(blocks)
+    return combined[:MAX_LIVE_DATA_CHARS]
+
+
 _COLLEGE_CONTENT_PROMPT = ChatPromptTemplate.from_template("""
 You are an expert education and placement analyst for India.
 
@@ -495,6 +588,9 @@ Career Path: **{subcareer}**
 Location Context: **{location_context}**
 
 {scope_line}
+
+RAW LIVE WEB DATA (use to ground rankings, fees, packages, cutoffs, and recruiters in real signals — prefer these over generic memory; ignore irrelevant snippets):
+{live_data}
 
 Strictly follow the output format below. Be specific, data-driven, and realistic.
 
@@ -505,7 +601,7 @@ Strictly follow the output format below. Be specific, data-driven, and realistic
 ## Top College Recommendations
 
 Markdown Table with EXACT columns:
-| College | City | Tier | Course | Duration | Fees (₹/yr) | Avg Package (LPA) | Top Recruiters | Admission |
+| College | City | Tier | Course | Duration | Fees (₹/yr) | Total Cost 4yr (₹) | Avg Package (LPA) | Top Recruiters | Admission | Source |
 
 #### Constraints:
 - 10-12 colleges
@@ -514,16 +610,48 @@ Markdown Table with EXACT columns:
 - Course: specific degree name (e.g., B.Tech CSE, MBA, BCA)
 - Duration: e.g., 4 yrs, 2 yrs
 - Fees: compact format (e.g., 50K, 1.5L, 2-3L)
+- Total Cost 4yr: tuition + hostel + mess for full duration (e.g., 8L, 12-15L). For 2-yr courses, give 2-yr total.
 - Avg Package: realistic Indian data (e.g., 6, 8-12)
 - Top Recruiters: 2-3 real companies that hire from that college for this role
 - Admission: exam or mode (e.g., JEE Main, CAT, MHT-CET, Direct)
+- Source: short reference like "NIRF 2024", "Official site", "Shiksha", or domain from live data — prefer linkable origins seen in the live data
 - Mix Premier / State Govt / Private tiers
+
+---
+
+## Cutoff Trends (Last 2-3 Years)
+
+Markdown Table:
+| College | Exam | 2022 Closing Rank | 2023 Closing Rank | 2024 Closing Rank | Trend |
+
+- 5-7 of the most-targeted colleges from your list above
+- Use General/Open category cutoffs unless the user's location implies otherwise
+- Trend: Tightening / Stable / Easing
+- If a year's data is uncertain, write "~" with an estimated band (e.g., "~5,500–6,200")
 
 ---
 
 ## Entrance Exams to Target
 
 List 4-5 relevant entrance exams with a one-line description of what each tests or leads to.
+
+---
+
+## On-Campus vs Off-Campus Placement Reality
+
+Brief 4-5 bullet breakdown:
+- Typical % of students placed on-campus vs off-campus for "{subcareer}" at top colleges
+- Which tier of college pushes more on-campus placements
+- Realistic timeline: when on-campus drives start, when off-campus searches matter
+- 2 specific off-campus channels that work for "{subcareer}" graduates in India (e.g., LinkedIn referrals, Naukri, hackathon hiring)
+
+---
+
+## Alumni Strength in Target Companies
+
+For 4-6 of the recommended colleges, name 1-2 actual alumni or alumni clusters visible in companies hiring for "{subcareer}":
+- Format: **College** → notable alum / company cluster → 1-line context
+- Use real, verifiable patterns (e.g., "IIT Bombay → strong cluster at Google, Microsoft Hyderabad"). If unsure, omit rather than fabricate.
 
 ---
 
@@ -569,8 +697,11 @@ def generate_college_recommendations(
     llm: ChatGroq,
     location: Optional[str] = None,
     district: Optional[str] = None,
+    serpapi_key: Optional[str] = None,
 ) -> Tuple[str, Optional[dict]]:
-    """ContentAgent + DataAgent. The DataAgent only emits a single ChartData payload."""
+    """ContentAgent + DataAgent. ContentAgent now consumes SerpAPI live data when a key
+    is provided; falls back to model knowledge if SerpAPI is missing or fails. The
+    DataAgent only emits a single ChartData payload."""
     try:
         if llm is None:
             raise RuntimeError("LLM not initialized")
@@ -601,7 +732,12 @@ def generate_college_recommendations(
             scope_line = 'Include IITs, NITs, and top state/private colleges across India.'
             location_context = 'in India'
 
-        logger.info(f"[COLLEGE-RECS] start for {safe_subcareer!r} {location_context} (no SerpAPI; pure model knowledge)")
+        live_data = _search_colleges_web(safe_subcareer, location_context, serpapi_key)
+        used_live = live_data is not _DEFAULT_COLLEGE_LIVE_DATA
+        logger.info(
+            f"[COLLEGE-RECS] start for {safe_subcareer!r} {location_context} "
+            f"(SerpAPI live data: {'on' if used_live else 'off — fallback to model knowledge'})"
+        )
 
         markdown, chart = _run_dual_chain(
             llm,
@@ -612,6 +748,7 @@ def generate_college_recommendations(
                 "subcareer": safe_subcareer,
                 "location_context": location_context,
                 "scope_line": scope_line,
+                "live_data": live_data,
             },
         )
         return markdown, (chart.model_dump() if chart is not None else None)
@@ -624,55 +761,163 @@ def generate_college_recommendations(
 # ── Resume Feedback ───────────────────────────────────────────────────────────
 
 _RESUME_PROMPT = ChatPromptTemplate.from_template(
-    """As an expert resume coach, analyze the following resume for the target role: "{target_role}"
+    """You are an expert resume coach. Analyze the resume below for the target role: "{target_role}"
 
 **Resume Content**:
 {resume_text}{truncation_notice}
 
-Provide comprehensive feedback in the following structure:
+CRITICAL OUTPUT RULES (read carefully — formatting is graded):
+- Use the EXACT section headers, blank lines, and bullet structure shown in the template.
+- Every section starts with `## N. Section Name` on its own line, then a blank line.
+- Every list item starts on a new line with `- `. Do NOT chain items inline.
+- Leave a blank line before any bulleted list, table, or sub-heading.
+- Numeric scores MUST be computed from the actual resume — never invent placeholders like "X/10".
+- Do NOT add any preamble, conclusion, or "Here is your analysis" text. Begin with `## 1. Overall Assessment`.
 
-1) **Overall Assessment** (Score: X/10):
-   - Brief summary of strengths and weaknesses
-   - First impression rating
+OUTPUT TEMPLATE (replicate this structure verbatim, filling in real content):
 
-2) **Content Analysis**:
-   - Relevance to target role
-   - Key achievements and quantifiable results
-   - Skills alignment with job requirements
-   - Missing critical information
+## 1. Overall Assessment
 
-3) **Format & Structure**:
-   - Layout and readability assessment
-   - Section organization
-   - Length appropriateness
+**Score:** X/10
+**First impression:** <one short sentence>
 
-4) **Specific Improvements Needed**:
-   - What to add (skills, experiences, keywords)
-   - What to remove or reduce
-   - How to rephrase key sections
-   - ATS optimization tips
+<2–3 sentence summary of strengths and weaknesses>
 
-5) **Section-by-Section Feedback**:
-   - Summary/Objective
-   - Work Experience
-   - Education
-   - Skills
-   - Projects/Certifications
+---
 
-6) **Action Items** (Priority-ordered):
-   - Top 5-7 changes to make immediately
-   - Keywords to include for ATS
-   - Formatting improvements
+## 2. Quantification Score
 
-7) **Example Improvements**:
-   - Before/After examples for 2-3 bullet points
-   - Better ways to phrase achievements
+**Quantified bullets:** X of Y (Z%)
+**Verdict:** Strong / Moderate / Weak
 
-8) **Industry-Specific Tips**:
-   - Tailored advice for the Indian job market
-   - Cultural considerations for Indian recruiters
+**Bullets to improve:**
 
-Be constructive, specific, and actionable. Use markdown formatting with clear sections.
+- "<exact bullet text from resume>" — add metric like "<specific suggestion>"
+- "<exact bullet text from resume>" — add metric like "<specific suggestion>"
+- "<exact bullet text from resume>" — add metric like "<specific suggestion>"
+
+---
+
+## 3. Verb Strength Audit
+
+**Verdict:** Strong / Mixed / Weak
+
+| Weak phrase from resume | Stronger replacement |
+| --- | --- |
+| "<original phrase>" | "<stronger phrase>" |
+| "<original phrase>" | "<stronger phrase>" |
+| "<original phrase>" | "<stronger phrase>" |
+| "<original phrase>" | "<stronger phrase>" |
+| "<original phrase>" | "<stronger phrase>" |
+
+---
+
+## 4. ATS Keyword Match for "{target_role}"
+
+**Match Score:** X/100
+
+| Keyword | Status |
+| --- | --- |
+| <keyword 1> | ✅ Present |
+| <keyword 2> | 🔶 Implied |
+| <keyword 3> | ❌ Missing |
+| ... 8–12 rows total ... | |
+
+**Score calculation:** (Present + 0.5 × Implied) ÷ Total × 100 = X
+
+**Top 3 keywords to add now:**
+
+- <keyword>
+- <keyword>
+- <keyword>
+
+---
+
+## 5. Skill Gap Heatmap
+
+| Skill | Resume Strength | Target Role Demand | Gap |
+| --- | --- | --- | --- |
+| <skill> | Strong / Moderate / Absent | High / Medium / Low | Critical / Moderate / None / Surplus |
+| ... 6–8 rows total ... | | | |
+
+---
+
+## 6. Content Analysis
+
+- **Relevance to target role:** <one line>
+- **Key achievements:** <one line>
+- **Skills alignment:** <one line>
+- **Missing critical info:** <one line>
+
+---
+
+## 7. Format & Structure
+
+- **Layout & readability:** <one line>
+- **Section organization:** <one line>
+- **Length:** <one line>
+
+---
+
+## 8. Specific Improvements Needed
+
+- **Add:** <skills/experiences/keywords>
+- **Remove/reduce:** <items>
+- **Rephrase:** <items>
+- **ATS optimization:** <items>
+
+---
+
+## 9. Section-by-Section Feedback
+
+- **Summary/Objective:** <one line>
+- **Work Experience:** <one line>
+- **Education:** <one line>
+- **Skills:** <one line>
+- **Projects/Certifications:** <one line>
+
+---
+
+## 10. Action Items (Priority-ordered)
+
+1. <highest priority change>
+2. <next>
+3. <next>
+4. <next>
+5. <next>
+
+---
+
+## 11. Example Improvements
+
+**Before:** "<actual bullet from resume>"
+**After:** "<rewritten bullet with strong verb + metric>"
+
+**Before:** "<actual bullet from resume>"
+**After:** "<rewritten bullet with strong verb + metric>"
+
+---
+
+## 12. Mock Interview Questions
+
+| # | Question | What they're testing |
+| --- | --- | --- |
+| 1 | <behavioral question about claimed experience> | <skill/quality being probed> |
+| 2 | <behavioral question about claimed experience> | <skill/quality being probed> |
+| 3 | <technical question tied to stated skills> | <skill/quality being probed> |
+| 4 | <technical question tied to stated skills> | <skill/quality being probed> |
+| 5 | <gap-probing question on vague claim or short tenure> | <skill/quality being probed> |
+| 6 | <gap-probing question on vague claim or short tenure> | <skill/quality being probed> |
+
+---
+
+## 13. Industry-Specific Tips (India)
+
+- <tip tailored for the Indian job market>
+- <tip on cultural considerations for Indian recruiters>
+- <tip on visible Indian platforms — Naukri, LinkedIn, AngelList>
+
+End of report. Output ONLY the filled-in template above — no extra commentary, no closing remarks.
 """
 )
 
@@ -717,77 +962,204 @@ def generate_resume_feedback(
 
 # ── Job Search ────────────────────────────────────────────────────────────────
 
+# Map SerpAPI posted_at strings ("3 days ago", "2 hours ago") to integer days.
+# Used for client-side recency filtering and for sorting newest-first.
+_POSTED_UNIT_DAYS = {
+    "hour": 0, "hours": 0,
+    "day": 1, "days": 1,
+    "week": 7, "weeks": 7,
+    "month": 30, "months": 30,
+    "year": 365, "years": 365,
+}
+
+
+def _parse_posted_age_days(posted_at: Optional[str]) -> Optional[int]:
+    """Parse SerpAPI strings like '3 days ago', '2 hours ago', 'just posted' into days."""
+    if not posted_at:
+        return None
+    s = posted_at.strip().lower()
+    if "just" in s or "today" in s or "hour" in s or "minute" in s:
+        return 0
+    m = re.match(r"(\d+)\s*\+?\s*(hour|hours|day|days|week|weeks|month|months|year|years)\b", s)
+    if not m:
+        return None
+    n = int(m.group(1))
+    return n * _POSTED_UNIT_DAYS.get(m.group(2), 1)
+
+
 def search_jobs(role: str, location: str = "India", api_key: Optional[str] = None) -> List[dict]:
     """Live job listings via SerpAPI's google_jobs engine. Not part of the agent
-    pipeline — called directly by the /jobs endpoint."""
+    pipeline — called directly by the /jobs endpoint.
+
+    Single SerpAPI call per request to keep quota usage low. The role string already
+    encodes the job-type filter (e.g. "data analyst Internship") via the frontend,
+    so one broad query is enough. Each result includes posted_at, posted_age_days,
+    is_remote, schedule_type, and salary; results are returned newest-first."""
     try:
         if not api_key:
             logger.error("SerpAPI key is missing in search_jobs")
             return []
 
+        query_text = f"{role} jobs in {location}"
+        params = {
+            "engine": "google_jobs",
+            "q": query_text,
+            "hl": "en",
+            "gl": "in",
+            "api_key": api_key,
+        }
+
+        logger.info(f"[SERPAPI:google_jobs] querying: {query_text!r}")
+        try:
+            results = GoogleSearch(params).get_dict()
+        except Exception as e:
+            logger.error(f"Search failed for '{query_text}': {e}")
+            return []
+
+        if "error" in results:
+            logger.error(f"[SERPAPI:google_jobs] error for {query_text!r}: {results['error']}")
+            return []
+
+        page_results = results.get("jobs_results") or []
+        if not page_results:
+            logger.warning(f"[SERPAPI:google_jobs] empty results for: {query_text!r}")
+            return []
+
+        logger.info(f"[SERPAPI:google_jobs] got {len(page_results)} results for {query_text!r}")
+
         all_jobs: List[dict] = []
         seen_keys: set = set()
-        search_terms = [
-            f"{role} jobs in {location}",
-            f"{role} openings {location}",
-            f"{role} internships {location}",
-        ]
+        for job in page_results:
+            title = (job.get("title") or "Unknown Role").strip()
+            company = (job.get("company_name") or "").strip()
+            # Single canonical dedup key — both sides built the same way.
+            key = f"{title.lower()}::{company.lower()}"
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
 
-        for query_text in search_terms:
-            if len(all_jobs) >= 10:
-                break
+            apply_options = job.get("apply_options") or []
+            apply_link = apply_options[0].get("link", "#") if apply_options else "#"
 
-            params = {
-                "engine": "google_jobs",
-                "q": query_text,
-                "hl": "en",
-                "gl": "in",
-                "api_key": api_key,
-            }
+            desc = job.get("description") or ""
+            truncated_desc = desc[:250] + "..." if len(desc) > 250 else desc
 
-            logger.info(f"[SERPAPI:google_jobs] querying: {query_text!r}")
-            try:
-                results = GoogleSearch(params).get_dict()
+            detected = job.get("detected_extensions") or {}
+            posted_at = detected.get("posted_at") or ""
+            schedule_type = detected.get("schedule_type") or ""
+            is_remote = bool(detected.get("work_from_home"))
+            salary = detected.get("salary") or ""
+            posted_age_days = _parse_posted_age_days(posted_at)
 
-                if "error" in results:
-                    logger.error(f"[SERPAPI:google_jobs] error for {query_text!r}: {results['error']}")
-                    continue
+            all_jobs.append({
+                "title": title,
+                "company": company or "Unknown Company",
+                "company_name_raw": company,
+                "location": job.get("location") or location,
+                "description": truncated_desc,
+                "link": apply_link,
+                "thumbnail": job.get("thumbnail"),
+                "posted_at": posted_at,
+                "posted_age_days": posted_age_days,
+                "schedule_type": schedule_type,
+                "is_remote": is_remote,
+                "salary": salary,
+            })
 
-                page_results = results.get("jobs_results") or []
-                if not page_results:
-                    logger.warning(f"[SERPAPI:google_jobs] empty results for: {query_text!r}")
-                    continue
-
-                logger.info(f"[SERPAPI:google_jobs] got {len(page_results)} results for {query_text!r}")
-                for job in page_results:
-                    title = (job.get("title") or "Unknown Role").strip()
-                    company = (job.get("company_name") or "").strip()
-                    # Single canonical dedup key — both sides built the same way.
-                    key = f"{title.lower()}::{company.lower()}"
-                    if key in seen_keys:
-                        continue
-                    seen_keys.add(key)
-
-                    apply_options = job.get("apply_options") or []
-                    apply_link = apply_options[0].get("link", "#") if apply_options else "#"
-
-                    desc = job.get("description") or ""
-                    truncated_desc = desc[:250] + "..." if len(desc) > 250 else desc
-
-                    all_jobs.append({
-                        "title": title,
-                        "company": company or "Unknown Company",
-                        "company_name_raw": company,
-                        "location": job.get("location") or location,
-                        "description": truncated_desc,
-                        "link": apply_link,
-                        "thumbnail": job.get("thumbnail"),
-                    })
-            except Exception as e:
-                logger.error(f"Search failed for '{query_text}': {e}")
-
+        # Sort newest-first; jobs without a parseable age sink to the bottom
+        # but keep their relative order from the search engine.
+        all_jobs.sort(key=lambda j: (j["posted_age_days"] is None, j["posted_age_days"] or 0))
         return all_jobs[:15]
 
     except Exception as e:
         logger.error(f"Root error in search_jobs: {e}")
         return []
+
+
+def _format_recent_postings_section(role: str, api_key: Optional[str], limit: int = 4) -> str:
+    """Pull a few real listings via a SINGLE google_jobs call and format them as a
+    markdown section appended to the market-analysis report. Returns "" on miss.
+
+    Intentionally bypasses the 3-query loop in `search_jobs` to keep market-analysis
+    SerpAPI usage to one call here (plus the ReAct web_search call upstream).
+    """
+    if not api_key:
+        return ""
+
+    query_text = f"{role} jobs in India"
+    params = {
+        "engine": "google_jobs",
+        "q": query_text,
+        "hl": "en",
+        "gl": "in",
+        "api_key": api_key,
+    }
+    logger.info(f"[SERPAPI:google_jobs] (market-recent) querying: {query_text!r}")
+    try:
+        results = GoogleSearch(params).get_dict()
+    except Exception as e:
+        logger.warning(f"[MARKET-ANALYSIS] recent postings fetch failed: {e}")
+        return ""
+
+    if "error" in results:
+        logger.warning(f"[MARKET-ANALYSIS] google_jobs error: {results['error']}")
+        return ""
+
+    page_results = results.get("jobs_results") or []
+    if not page_results:
+        return ""
+
+    # Build lightweight job dicts inline, sort newest-first using the same parser
+    # search_jobs uses, and cap at `limit`.
+    jobs: List[dict] = []
+    for job in page_results[: limit * 3]:  # parse a few extra so sorting has options
+        title = (job.get("title") or "Unknown Role").strip()
+        company = (job.get("company_name") or "").strip()
+        apply_options = job.get("apply_options") or []
+        apply_link = apply_options[0].get("link", "") if apply_options else ""
+
+        detected = job.get("detected_extensions") or {}
+        posted_at = detected.get("posted_at") or ""
+        schedule_type = detected.get("schedule_type") or ""
+        is_remote = bool(detected.get("work_from_home"))
+        posted_age_days = _parse_posted_age_days(posted_at)
+
+        jobs.append({
+            "title": title,
+            "company": company or "Unknown Company",
+            "location": job.get("location") or "India",
+            "link": apply_link,
+            "posted_at": posted_at,
+            "posted_age_days": posted_age_days,
+            "schedule_type": schedule_type,
+            "is_remote": is_remote,
+        })
+
+    jobs.sort(key=lambda j: (j["posted_age_days"] is None, j["posted_age_days"] or 0))
+
+    lines = ["", "---", "", "### **Recent Live Postings**",
+             "*Pulled in real time from Google Jobs — verified, not generated.*", ""]
+    for job in jobs[:limit]:
+        bits = []
+        if job.get("posted_at"):
+            bits.append(job["posted_at"])
+        if job.get("is_remote"):
+            bits.append("Remote")
+        elif job.get("schedule_type"):
+            bits.append(job["schedule_type"])
+        if job.get("location"):
+            bits.append(job["location"])
+        meta = " · ".join(b for b in bits if b)
+
+        title = job["title"]
+        company = job["company"]
+        link = job["link"]
+        if link:
+            heading = f"- **[{title}]({link})** — {company}"
+        else:
+            heading = f"- **{title}** — {company}"
+        lines.append(heading)
+        if meta:
+            lines.append(f"  - {meta}")
+    lines.append("")
+    return "\n".join(lines)

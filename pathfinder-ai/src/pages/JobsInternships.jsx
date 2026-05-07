@@ -14,6 +14,17 @@ const LOCATIONS = [
 
 const JOB_TYPES = ['All', 'Internship', 'Full-time']
 
+// Recency chips — filter applied client-side against posted_age_days returned by backend.
+// `null` means "no upper bound" (i.e. show everything).
+const RECENCY_OPTIONS = [
+  { label: 'Any time', maxDays: null },
+  { label: 'Last 24h', maxDays: 1 },
+  { label: 'Last 7 days', maxDays: 7 },
+  { label: 'Last 30 days', maxDays: 30 },
+]
+
+const WORK_MODES = ['Any', 'Remote only', 'On-site only']
+
 // Fallback static cards shown before first search
 const DEMO_JOBS = [
   {
@@ -62,6 +73,9 @@ export default function JobsInternships() {
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(cache?.searched ?? false)
   const [error, setError] = useState('')
+  // Client-side post-fetch filters — don't trigger a re-search.
+  const [recencyFilter, setRecencyFilter] = useState('Any time')
+  const [workMode, setWorkMode] = useState('Any')
 
   useEffect(() => {
     if (searched) {
@@ -97,6 +111,18 @@ export default function JobsInternships() {
   }
 
   const showDemo = !loading && !searched && !error
+
+  // Apply client-side recency + work-mode chips on top of the fetched jobs.
+  const recencyMax = RECENCY_OPTIONS.find(o => o.label === recencyFilter)?.maxDays ?? null
+  const filteredJobs = jobs.filter(job => {
+    if (recencyMax != null) {
+      // Drop jobs that have no parsed age (we can't prove they're recent).
+      if (job.posted_age_days == null || job.posted_age_days > recencyMax) return false
+    }
+    if (workMode === 'Remote only' && !job.is_remote) return false
+    if (workMode === 'On-site only' && job.is_remote) return false
+    return true
+  })
 
   return (
     <div className="w-full space-y-6">
@@ -235,17 +261,68 @@ export default function JobsInternships() {
       {/* Live Results */}
       {!loading && searched && jobs.length > 0 && (
         <div>
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex flex-col gap-3 mb-3">
             <p className="text-on-surface-variant text-sm">
-              Found{' '}
-              <span className="text-on-surface font-semibold">{jobs.length}</span> listings for{' '}
+              Showing{' '}
+              <span className="text-on-surface font-semibold">{filteredJobs.length}</span>
+              {filteredJobs.length !== jobs.length && (
+                <> of <span className="text-on-surface font-semibold">{jobs.length}</span></>
+              )}
+              {' '}listings for{' '}
               <span className="text-primary font-medium">{searchRole}</span>
               {' '}in{' '}
               <span className="text-on-surface-variant">{location}</span>
+              {' '}· sorted newest first
             </p>
+
+            {/* Filter chips — operate on the already-fetched result set. */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold mr-1">Posted</span>
+              {RECENCY_OPTIONS.map(opt => (
+                <button
+                  key={opt.label}
+                  onClick={() => setRecencyFilter(opt.label)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                    recencyFilter === opt.label
+                      ? 'bg-primary text-on-primary shadow-md shadow-primary/20'
+                      : 'bg-surface-container-highest text-on-surface-variant hover:bg-surface-container'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+              <span className="w-px h-4 bg-outline/20 mx-2"></span>
+              <span className="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold mr-1">Mode</span>
+              {WORK_MODES.map(m => (
+                <button
+                  key={m}
+                  onClick={() => setWorkMode(m)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                    workMode === m
+                      ? 'bg-tertiary text-on-tertiary shadow-md shadow-tertiary/20'
+                      : 'bg-surface-container-highest text-on-surface-variant hover:bg-surface-container'
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
           </div>
+          {filteredJobs.length === 0 && (
+            <div className="bg-surface-container-low rounded-xl p-6 text-center">
+              <p className="text-on-surface-variant text-sm">
+                No listings match the current filters.
+              </p>
+              <button
+                onClick={() => { setRecencyFilter('Any time'); setWorkMode('Any') }}
+                className="mt-2 text-primary text-xs font-bold underline cursor-pointer"
+              >
+                Clear filters
+              </button>
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-            {jobs.map((job, i) => (
+            {filteredJobs.map((job, i) => (
               <div
                 key={i}
                 className="group bg-surface-container-low rounded-xl overflow-hidden hover:bg-surface-container transition-all duration-300 flex flex-col"
@@ -281,6 +358,39 @@ export default function JobsInternships() {
                     <span className="material-symbols-outlined text-sm">location_on</span>
                     <span className="truncate">{job.location}</span>
                   </div>
+
+                  {/* Meta badges — posted age, remote/schedule, salary if SerpAPI returned it */}
+                  {(job.posted_at || job.is_remote || job.schedule_type || job.salary) && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {job.posted_at && (
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1 ${
+                          job.posted_age_days != null && job.posted_age_days <= 7
+                            ? 'bg-tertiary/15 text-tertiary'
+                            : 'bg-surface-container-highest text-on-surface-variant'
+                        }`}>
+                          <span className="material-symbols-outlined text-[12px] leading-none">schedule</span>
+                          {job.posted_at}
+                        </span>
+                      )}
+                      {job.is_remote && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/15 text-primary inline-flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[12px] leading-none">public</span>
+                          Remote
+                        </span>
+                      )}
+                      {!job.is_remote && job.schedule_type && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-surface-container-highest text-on-surface-variant">
+                          {job.schedule_type}
+                        </span>
+                      )}
+                      {job.salary && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-secondary/15 text-secondary">
+                          {job.salary}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
                   {job.description && (
                     <p className="text-on-surface-variant text-xs leading-relaxed line-clamp-3 flex-1">
                       {job.description}

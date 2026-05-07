@@ -2,8 +2,11 @@ import { useState, useRef, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import api from '../api/client.js'
+import { startTask, subscribeTask, peekTask, clearTask } from '../utils/backgroundTask.js'
 
 const SESSION_KEY = 'resumeCoach_cache'
+const TASK_KEY = 'task:resume-coach'
+
 function loadCache() {
   try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null') } catch { return null }
 }
@@ -26,6 +29,33 @@ export default function ResumeCoach() {
     }
   }, [result, targetRole])
 
+  // Re-attach to an in-flight or finished task on (re-)mount so a request
+  // started before navigation continues to drive this page's state.
+  useEffect(() => {
+    const existing = peekTask(TASK_KEY)
+    if (!existing) return
+    if (existing.status === 'pending') {
+      setLoading(true)
+      setError('')
+    } else if (existing.status === 'done' && existing.data) {
+      setResult(existing.data.result || '')
+    } else if (existing.status === 'error') {
+      setError(existing.error?.response?.data?.detail || 'Something went wrong. Please try again.')
+    }
+    const unsub = subscribeTask(TASK_KEY, snap => {
+      if (snap.status === 'pending') {
+        setLoading(true)
+      } else if (snap.status === 'done' && snap.data) {
+        setResult(snap.data.result || '')
+        setLoading(false)
+      } else if (snap.status === 'error') {
+        setError(snap.error?.response?.data?.detail || 'Something went wrong. Please try again.')
+        setLoading(false)
+      }
+    })
+    return unsub
+  }, [])
+
   const handleFile = (f) => {
     if (!f) return
     const allowed = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain']
@@ -46,27 +76,30 @@ export default function ResumeCoach() {
     if (!hasContent || !targetRole.trim() || loading) return
 
     sessionStorage.removeItem(SESSION_KEY)
+    clearTask(TASK_KEY)
     setLoading(true)
     setError('')
     setResult('')
-    const timeout = setTimeout(() => {
-      setLoading(false)
-      setError('Analysis is taking too long. Please try again.')
-    }, 60000)
+
+    // Build FormData up front so it's captured in the closure — file/resumeText
+    // may change after navigation, but the in-flight request must keep its inputs.
+    const formData = new FormData()
+    formData.append('target_role', targetRole)
+    if (inputMode === 'upload' && file) {
+      formData.append('file', file)
+    } else {
+      formData.append('resume_text', resumeText)
+    }
+
     try {
-      const formData = new FormData()
-      formData.append('target_role', targetRole)
-      if (inputMode === 'upload' && file) {
-        formData.append('file', file)
-      } else {
-        formData.append('resume_text', resumeText)
-      }
-      const { data } = await api.post('/resume-analysis', formData)
+      const data = await startTask(
+        TASK_KEY,
+        () => api.post('/resume-analysis', formData).then(r => r.data)
+      )
       setResult(data.result || '')
     } catch (err) {
       setError(err.response?.data?.detail || 'Something went wrong. Please try again.')
     } finally {
-      clearTimeout(timeout)
       setLoading(false)
     }
   }

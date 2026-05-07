@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import { Radar } from 'react-chartjs-2'
 import api from '../api/client.js'
 import { extractChartData, stripChartComment, radarOptions, buildRadarDataset } from '../utils/chartUtils.js'
+import { startTask, subscribeTask, peekTask, clearTask } from '../utils/backgroundTask.js'
 
 // ── Palette cycling for skill bars ───────────────────────────────────────────
 const SKILL_COLORS = [
@@ -56,9 +57,18 @@ const DEMO_RESOURCES = [
 
 
 const SESSION_KEY = 'careerInsights_cache'
+const TASK_KEY = 'task:career-insights'
 
 function loadCache() {
   try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null') } catch { return null }
+}
+
+// Map raw API response into the three pieces of UI state.
+function applyCareerData(data, setters) {
+  const { setInsights, setChartData, setResult } = setters
+  setInsights(data.insights || null)
+  setChartData(data.chartData || extractChartData(data.result || ''))
+  setResult(stripChartComment(data.result || ''))
 }
 
 export default function CareerInsights() {
@@ -96,27 +106,54 @@ export default function CareerInsights() {
       .catch(() => setError('Failed to load career list. Please refresh the page.'))
   }, [])
 
+  // Re-attach to an in-flight or finished task on (re-)mount so a request
+  // started before navigation continues to drive this page's state.
+  useEffect(() => {
+    const existing = peekTask(TASK_KEY)
+    if (!existing) return
+    if (existing.status === 'pending') {
+      setLoading(true)
+      setError('')
+    } else if (existing.status === 'done' && existing.data) {
+      applyCareerData(existing.data, { setInsights, setChartData, setResult })
+    } else if (existing.status === 'error') {
+      setError(existing.error?.response?.data?.detail || 'Something went wrong. Please try again.')
+    }
+    const unsub = subscribeTask(TASK_KEY, snap => {
+      if (snap.status === 'pending') {
+        setLoading(true)
+      } else if (snap.status === 'done' && snap.data) {
+        applyCareerData(snap.data, { setInsights, setChartData, setResult })
+        setLoading(false)
+      } else if (snap.status === 'error') {
+        setError(snap.error?.response?.data?.detail || 'Something went wrong. Please try again.')
+        setLoading(false)
+      }
+    })
+    return unsub
+  }, [])
+
   const handleAnalyze = async () => {
     if (!category || !subcareer || loading) return
     sessionStorage.removeItem(SESSION_KEY)
+    clearTask(TASK_KEY) // drop any prior finished task before starting fresh
     setLoading(true)
     setError('')
     setResult('')
     setChartData(null)
     setInsights(null)
-    const timeout = setTimeout(() => {
-      setLoading(false)
-      setError('Analysis is taking too long. Please try again.')
-    }, 60000)
+
     try {
-      const { data } = await api.post('/career-insights', { category, subcareer })
-      setInsights(data.insights || null)
-      setChartData(data.chartData || extractChartData(data.result || ''))
-      setResult(stripChartComment(data.result || ''))
+      const data = await startTask(
+        TASK_KEY,
+        () => api.post('/career-insights', { category, subcareer }).then(r => r.data)
+      )
+      // The subscribe handler in the mount effect will also fire — applying twice
+      // is idempotent (same data). Apply here too so this immediate path stays fast.
+      applyCareerData(data, { setInsights, setChartData, setResult })
     } catch (err) {
       setError(err.response?.data?.detail || 'Something went wrong. Please try again.')
     } finally {
-      clearTimeout(timeout)
       setLoading(false)
     }
   }
