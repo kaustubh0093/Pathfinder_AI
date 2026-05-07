@@ -219,6 +219,20 @@ async def resume_analysis(
         raise HTTPException(status_code=500, detail="LLM not initialized. Check API keys.")
 
     result = await asyncio.to_thread(generate_resume_feedback, resume_text, target_role, llm)
+
+    # Pre-flight check from the prompt: when the LLM decides the document isn't a
+    # resume it emits a single "NOT_A_RESUME: <reason>" line. Translate that into
+    # a 400 so the frontend's existing error banner shows a clean message rather
+    # than rendering the empty 13-section analysis.
+    stripped = (result or "").strip()
+    if stripped.startswith("NOT_A_RESUME:"):
+        reason = stripped.split(":", 1)[1].strip() or "The uploaded document does not look like a resume."
+        logger.info(f"[RESUME] rejected non-resume upload: {reason}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"This doesn't look like a resume — {reason} Please upload a resume / CV instead.",
+        )
+
     return {"result": as_markdown(result)}
 
 

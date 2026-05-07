@@ -766,6 +766,34 @@ _RESUME_PROMPT = ChatPromptTemplate.from_template(
 **Resume Content**:
 {resume_text}{truncation_notice}
 
+STEP 0 — PRE-FLIGHT CHECK (do this BEFORE anything else):
+
+Determine if the document above is actually a resume / CV. A resume describes
+the candidate's OWN background and contains the candidate's Education, Experience,
+Skills, Projects, or Certifications.
+
+The document is NOT a resume if it is any of these:
+- a job offer letter, appointment letter, or employment contract
+- a degree certificate, marksheet, or academic transcript
+- a recommendation / experience letter written ABOUT someone
+- a job description posted by an employer
+- a cover letter alone (no qualifications listed)
+- random unrelated text, code, or a different document
+
+If the document is NOT a resume, respond with EXACTLY ONE LINE in this format and
+nothing else — no markdown, no analysis, no closing remarks:
+
+NOT_A_RESUME: <one short sentence describing what the document actually is>
+
+Examples of valid NOT_A_RESUME responses:
+NOT_A_RESUME: This appears to be a job offer letter, not a resume.
+NOT_A_RESUME: This appears to be a degree certificate, not a resume.
+NOT_A_RESUME: This document does not contain any candidate qualifications.
+
+Only proceed to the analysis template below if the document IS a resume.
+
+---
+
 CRITICAL OUTPUT RULES (read carefully — formatting is graded):
 - Use the EXACT section headers, blank lines, and bullet structure shown in the template.
 - Every section starts with `## N. Section Name` on its own line, then a blank line.
