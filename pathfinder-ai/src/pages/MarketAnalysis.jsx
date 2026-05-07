@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import { Bar } from 'react-chartjs-2'
 import api from '../api/client.js'
 import { extractChartData, stripChartComment, barOptions, buildBarDataset } from '../utils/chartUtils.js'
+import { startTask, subscribeTask, peekTask, clearTask } from '../utils/backgroundTask.js'
 
 // ── Skill tag colours cycling through design system palette ──
 const SKILL_COLORS = [
@@ -16,8 +17,17 @@ const SKILL_COLORS = [
 ]
 
 const SESSION_KEY = 'marketAnalysis_cache'
+const TASK_KEY = 'task:market-analysis'
+
 function loadCache() {
   try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null') } catch { return null }
+}
+
+function applyMarketData(data, setters) {
+  const { setChartData, setInsights, setResult } = setters
+  setChartData(data.chartData || extractChartData(data.result || ''))
+  setInsights(data.insights || null)
+  setResult(stripChartComment(data.result || ''))
 }
 
 export default function MarketAnalysis() {
@@ -35,27 +45,52 @@ export default function MarketAnalysis() {
     }
   }, [result, insights, chartData, role])
 
+  // Re-attach to an in-flight or finished task on (re-)mount so a request
+  // started before navigation continues to drive this page's state.
+  useEffect(() => {
+    const existing = peekTask(TASK_KEY)
+    if (!existing) return
+    if (existing.status === 'pending') {
+      setLoading(true)
+      setError('')
+    } else if (existing.status === 'done' && existing.data) {
+      applyMarketData(existing.data, { setChartData, setInsights, setResult })
+    } else if (existing.status === 'error') {
+      setError(existing.error?.response?.data?.detail || 'Something went wrong. Please try again.')
+    }
+    const unsub = subscribeTask(TASK_KEY, snap => {
+      if (snap.status === 'pending') {
+        setLoading(true)
+      } else if (snap.status === 'done' && snap.data) {
+        applyMarketData(snap.data, { setChartData, setInsights, setResult })
+        setLoading(false)
+      } else if (snap.status === 'error') {
+        setError(snap.error?.response?.data?.detail || 'Something went wrong. Please try again.')
+        setLoading(false)
+      }
+    })
+    return unsub
+  }, [])
+
   const handleAnalyze = async () => {
     if (!role.trim() || loading) return
     sessionStorage.removeItem(SESSION_KEY)
+    clearTask(TASK_KEY)
     setLoading(true)
     setError('')
     setResult('')
     setChartData(null)
     setInsights(null)
-    const timeout = setTimeout(() => {
-      setLoading(false)
-      setError('Analysis is taking too long. Please try again.')
-    }, 60000)
+
     try {
-      const { data } = await api.post('/market-analysis', { subcareer: role })
-      setChartData(data.chartData || extractChartData(data.result || ''))
-      setInsights(data.insights || null)
-      setResult(stripChartComment(data.result || ''))
+      const data = await startTask(
+        TASK_KEY,
+        () => api.post('/market-analysis', { subcareer: role }).then(r => r.data)
+      )
+      applyMarketData(data, { setChartData, setInsights, setResult })
     } catch (err) {
       setError(err.response?.data?.detail || 'Something went wrong. Please try again.')
     } finally {
-      clearTimeout(timeout)
       setLoading(false)
     }
   }

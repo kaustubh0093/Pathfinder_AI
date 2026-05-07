@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import api from '../api/client.js'
+import { startTask, subscribeTask, peekTask, clearTask } from '../utils/backgroundTask.js'
 
 const LOCATIONS = [
   'India (All Regions)',
@@ -20,6 +21,8 @@ const FEATURED_IMG =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuD-W8N1WsCPdonqIZEwqYdMz9q3ix76dxaN9QMvVPMvquGdi0FWpILhNqeUf2Nf36g_RAajAeOo4tz8gTpfJkaJfsqd9TKhSFc3IEqIxEP-P7uizEjm4kCHhtFqSQjkpa8r-4Hxb_Fi40JukcAqoccemX1Ydrp_fCW3llSYTKxgq004kxUHK6QdIMOnZ9IziAIxM1C_8cXFk9xY_isiCwfXyOraX9Skd6MXbIEgjEYk-We68uBMBUFRXnk-jBBjvkHL3mCpscB1bfY'
 
 const SESSION_KEY = 'collegeAdvisor_cache'
+const TASK_KEY = 'task:college-advisor'
+
 function loadCache() {
   try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null') } catch { return null }
 }
@@ -40,27 +43,54 @@ export default function CollegeAdvisor() {
     }
   }, [result, careerPath, location, district])
 
+  // Re-attach to an in-flight or finished task on (re-)mount so a request
+  // started before navigation continues to drive this page's state.
+  useEffect(() => {
+    const existing = peekTask(TASK_KEY)
+    if (!existing) return
+    if (existing.status === 'pending') {
+      setLoading(true)
+      setError('')
+    } else if (existing.status === 'done' && existing.data) {
+      setResult(existing.data.result || '')
+    } else if (existing.status === 'error') {
+      setError(existing.error?.response?.data?.detail || 'Something went wrong. Please try again.')
+    }
+    const unsub = subscribeTask(TASK_KEY, snap => {
+      if (snap.status === 'pending') {
+        setLoading(true)
+      } else if (snap.status === 'done' && snap.data) {
+        setResult(snap.data.result || '')
+        setLoading(false)
+      } else if (snap.status === 'error') {
+        setError(snap.error?.response?.data?.detail || 'Something went wrong. Please try again.')
+        setLoading(false)
+      }
+    })
+    return unsub
+  }, [])
+
   const handleRecommend = async () => {
     if (!careerPath.trim() || loading) return
     sessionStorage.removeItem(SESSION_KEY)
+    clearTask(TASK_KEY)
     setLoading(true)
     setError('')
     setResult('')
-    const timeout = setTimeout(() => {
-      setLoading(false)
-      setError('Analysis is taking too long. Please try again.')
-    }, 60000)
+
     try {
-      const { data } = await api.post('/college-recommendations', {
-        subcareer: careerPath,
-        location: location === 'India (All Regions)' ? '' : location,
-        district: district.trim() || null,
-      })
+      const data = await startTask(
+        TASK_KEY,
+        () => api.post('/college-recommendations', {
+          subcareer: careerPath,
+          location: location === 'India (All Regions)' ? '' : location,
+          district: district.trim() || null,
+        }).then(r => r.data)
+      )
       setResult(data.result || '')
     } catch (err) {
       setError(err.response?.data?.detail || 'Something went wrong. Please try again.')
     } finally {
-      clearTimeout(timeout)
       setLoading(false)
     }
   }
