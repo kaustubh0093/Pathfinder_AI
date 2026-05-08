@@ -46,5 +46,12 @@ async def root():
     }
 
 
+@app.get("/api/health", tags=["Health"])
+async def health():
+    # Cheap endpoint with no AI init — used by the frontend on app mount to
+    # wake the Render dyno before the user navigates anywhere.
+    return {"status": "ok"}
+
+
 if __name__ == "__main__":
     uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)

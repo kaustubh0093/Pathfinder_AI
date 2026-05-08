@@ -163,8 +163,14 @@
   color: var(--color-on-surface-variant);
   font-size: 0.9rem;
 }
+/* Tailwind v4 preflight resets list-style: none on ul/ol — restore markers
+   so chat bullets and numbered lists actually render with bullets. */
+.prose-pathfinder ul { list-style-type: disc; }
+.prose-pathfinder ol { list-style-type: decimal; }
+.prose-pathfinder ul ul { list-style-type: circle; }
 .prose-pathfinder li {
   margin-bottom: 0.2em;
+  display: list-item;
 }
 .prose-pathfinder li::marker {
   color: var(--color-primary);

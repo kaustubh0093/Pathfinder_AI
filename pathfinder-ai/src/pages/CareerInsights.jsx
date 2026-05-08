@@ -5,6 +5,7 @@ import { Radar } from 'react-chartjs-2'
 import api from '../api/client.js'
 import { extractChartData, stripChartComment, radarOptions, buildRadarDataset } from '../utils/chartUtils.js'
 import { startTask, subscribeTask, peekTask, clearTask } from '../utils/backgroundTask.js'
+import { CAREERS_FALLBACK } from '../utils/careersFallback.js'
 
 // ── Palette cycling for skill bars ───────────────────────────────────────────
 const SKILL_COLORS = [
@@ -74,9 +75,15 @@ function applyCareerData(data, setters) {
 export default function CareerInsights() {
   const cache = loadCache()
 
-  const [careers, setCareers]     = useState({})
-  const [category, setCategory]   = useState(cache?.category   ?? '')
-  const [subcareer, setSubcareer] = useState(cache?.subcareer  ?? '')
+  // Seed dropdowns from bundled fallback so they're populated instantly even
+  // if the backend is cold-starting. /api/careers below will still overwrite
+  // this once it returns.
+  const initialCategory = cache?.category ?? Object.keys(CAREERS_FALLBACK)[0]
+  const initialSubcareer = cache?.subcareer ?? CAREERS_FALLBACK[initialCategory]?.[0] ?? ''
+
+  const [careers, setCareers]     = useState(CAREERS_FALLBACK)
+  const [category, setCategory]   = useState(initialCategory)
+  const [subcareer, setSubcareer] = useState(initialSubcareer)
   const [result, setResult]       = useState(cache?.result     ?? '')
   const [chartData, setChartData] = useState(cache?.chartData  ?? null)
   const [insights, setInsights]   = useState(cache?.insights   ?? null)
@@ -91,19 +98,12 @@ export default function CareerInsights() {
   }, [result, insights, chartData, category, subcareer])
 
   useEffect(() => {
+    // Soft refresh: dropdowns are already seeded from CAREERS_FALLBACK, so a
+    // backend miss (cold start, network blip) is non-fatal. Update silently
+    // when it succeeds and leave current category/subcareer alone.
     api.get('/careers')
-      .then(res => {
-        setCareers(res.data)
-        // Only set defaults if nothing is cached
-        if (!cache?.category) {
-          const firstCat = Object.keys(res.data)[0]
-          if (firstCat) {
-            setCategory(firstCat)
-            setSubcareer(res.data[firstCat][0] || '')
-          }
-        }
-      })
-      .catch(() => setError('Failed to load career list. Please refresh the page.'))
+      .then(res => { if (res.data && Object.keys(res.data).length) setCareers(res.data) })
+      .catch(() => { /* fallback already in place */ })
   }, [])
 
   // Re-attach to an in-flight or finished task on (re-)mount so a request
